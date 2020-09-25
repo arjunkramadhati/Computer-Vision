@@ -100,7 +100,6 @@ class FeatureOperator:
         img = cv.drawKeypoints(self.grayscaleImages[queueImage], keypoint, self.originalImages[queueImage], flags=cv.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
         cv.imwrite(tag + '.jpg', img)
 
-
     def sift_correpondence(self, queueImages, tags):
         (keypoint1, descriptor1) = self.cornerpointdict[tags[0]]
         (keypoint2, descriptor2) = self.cornerpointdict[tags[1]]
