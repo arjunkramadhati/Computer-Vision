@@ -6,7 +6,6 @@ Date: September 27, 2020
 
 
 [TO RUN CODE]: python3 cornerdetector.py
-
 Output:
     [jpg]: [Transformed images]
 """
