@@ -6,12 +6,6 @@ Date: September 27, 2020
 
 
 [TO RUN CODE]: python3 cornerdetector.py
-The code displays the pictures. The user will have to select the ROI points manually in the PQRS fashion.
-P ------- Q
-|         |
-|         |
-|         |
-R ------- S
 
 Output:
     [jpg]: [Transformed images]
