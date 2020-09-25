@@ -16,6 +16,7 @@ import numpy as np
 import time
 from scipy import signal as sg
 import tqdm
+import copy
 
 
 class FeatureOperator:
@@ -32,6 +33,7 @@ class FeatureOperator:
         for i in range(len(self.image_addresses)):
             self.originalImages.append(cv.imread(self.image_addresses[i]))
             self.grayscaleImages.append(cv.cvtColor(cv.imread(self.image_addresses[i]), cv.COLOR_BGR2GRAY))
+        self.siftobject = cv.SIFT_create()
 
     def build_haar_filter(self):
         mvalue = int(np.ceil(4 * self.scale))
@@ -60,13 +62,12 @@ class FeatureOperator:
     def draw_corner_points(self, queueImage, tag):
 
         points = self.cornerpointdict[tag].flatten()
-        image = self.originalImages[queueImage]
+        image = copy.deepcopy(self.originalImages[queueImage])
         for index in range(len(points)):
             if index == len(points) - 2:
                 break
             cv.circle(image, (points[index+2], points[index]), 4, [255, 255, 255], 10)
         return image
-
 
     def determine_corners(self, type, queueImage, tag):
         if type == 1:
@@ -93,9 +94,32 @@ class FeatureOperator:
             print(Rscore.shape)
             self.filter_corner_points(Rscore, 29, queueImage, tag)
 
+    def sift_corner_detect(self, queueImage, tag):
+        keypoint, descriptor = self.siftobject.detectAndCompute(self.grayscaleImages[queueImage], None)
+        self.cornerpointdict[tag] = (keypoint, descriptor)
+        img = cv.drawKeypoints(self.grayscaleImages[queueImage], keypoint, self.originalImages[queueImage], flags=cv.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+        cv.imwrite(tag + '.jpg', img)
+
+    def sift_correpondence(self, queueImages, tags):
+        (keypoint1, descriptor1) = self.cornerpointdict[tags[0]]
+        (keypoint2, descriptor2) = self.cornerpointdict[tags[1]]
+        matchedpoints = cv.BFMatcher().knnMatch(descriptor1, descriptor2, k=2)
+        filteredmatchedpoints = []
+        for pointone, pointtwo in matchedpoints:
+            if pointone.distance < (pointtwo.distance * 0.75):
+                filteredmatchedpoints.append([pointone])
+        result = cv.drawMatchesKnn(self.grayscaleImages[queueImages[0]], keypoint1, self.grayscaleImages[queueImages[1]],keypoint2, filteredmatchedpoints,None, flags=2)
+        cv.imwrite("Sift_Correspondence.jpg", result)
+
 if __name__ == "__main__":
-    tester = FeatureOperator(['hw4_Task1_Images/pair1/1.jpg'], 1.407)
-    tester.build_haar_filter()
-    tester.determine_corners(1, 0, "Harris")
-    image = tester.draw_corner_points(0,"Harris")
-    cv.imwrite("2.jpg", image)
+    tester = FeatureOperator(['hw4_Task1_Images/pair1/1.jpg','hw4_Task1_Images/pair1/2.jpg'], 1.407)
+    # tester.build_haar_filter()
+    # tester.determine_corners(1, 0, "Harris1")
+    # tester.determine_corners(1, 1, "Harris2")
+    # image = tester.draw_corner_points(0,"Harris1")
+    # cv.imwrite("1.jpg", image)
+    # image = tester.draw_corner_points(1, "Harris2")
+    # cv.imwrite("2.jpg", image)
+    tester.sift_corner_detect(0, "Sift1")
+    tester.sift_corner_detect(1, "Sift2")
+    tester.sift_correpondence((0, 1), ("Sift1","Sift2"))
