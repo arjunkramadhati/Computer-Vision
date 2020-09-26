@@ -94,6 +94,8 @@ class FeatureOperator:
             print(Rscore.shape)
             self.filter_corner_points(Rscore, 29, queueImage, tag)
 
+    # def harris_correspondence(self,queueImages, tags):
+
     def sift_corner_detect(self, queueImage, tag):
         keypoint, descriptor = self.siftobject.detectAndCompute(self.grayscaleImages[queueImage], None)
         self.cornerpointdict[tag] = (keypoint, descriptor)
@@ -112,7 +114,7 @@ class FeatureOperator:
         cv.imwrite("Sift_Correspondence.jpg", result)
 
 if __name__ == "__main__":
-    tester = FeatureOperator(['hw4_Task1_Images/pair1/1.jpg','hw4_Task1_Images/pair1/2.jpg'], 1.407)
+    tester = FeatureOperator(['hw4_Task1_Images/pair3/1.jpg','hw4_Task1_Images/pair3/2.jpg'], 1.407)
     # tester.build_haar_filter()
     # tester.determine_corners(1, 0, "Harris1")
     # tester.determine_corners(1, 1, "Harris2")
