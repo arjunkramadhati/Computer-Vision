@@ -129,14 +129,13 @@ class FeatureOperator:
                 for id2 in windowstwo:
                     difference = windowsone[id1]-windowstwo[id2]
                     ssd = np.sum(difference*difference)
-                    windowstwo[id2]=ssd
                     list.append(ssd)
                     list2.append(id2)
                 ssd = min(list)
                 id = list2[list.index(ssd)]
                 windowsone[id1] = (id,ssd)
             self.correspondence[tags[2]] = windowsone
-            self.correspondence[tags[3]] = windowstwo
+
 
     def draw_correspondence(self, tags, cutoffvalue):
         # ssdvalues = dict(sorted(self.correspondence[tags[1]].items(), key=lambda x: x[1], reverse=True))
@@ -149,7 +148,7 @@ class FeatureOperator:
                 copydict.pop(key)
 
         resultImage = np.hstack((self.grayscaleImages[0], self.grayscaleImages[1]))
-        horizontaloffset = self.grayscaleImages[1].shape[0]
+        horizontaloffset = 640
         print(copydict)
         for (key,value) in copydict.items():
             # print((key,value))
@@ -195,7 +194,7 @@ if __name__ == "__main__":
     thread_image_one.join()
     thread_image_two.join()
     tester.calculate_correspondence("SSD", ("Image1HarrisSW", "Image2HarrisSW","Image1to2SSD", "Image1to2SSDValues"))
-    image = tester.draw_correspondence(("Image1to2SSD", "Image1to2SSDValues"), 10000000)
+    image = tester.draw_correspondence(("Image1to2SSD", "Image1to2SSDValues"), 10000)
     cv.imwrite("result.jpg", image)
 
     # tester.sift_corner_detect(0, "Sift1")
