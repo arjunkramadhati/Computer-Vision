@@ -135,6 +135,24 @@ class FeatureOperator:
                 id = list2[list.index(ssd)]
                 windowsone[id1] = (id,ssd)
             self.correspondence[tags[2]] = windowsone
+        if style =="NCC":
+            for id1 in windowsone:
+                list =[]
+                list2=[]
+                for id2 in windowstwo:
+                    meanvalueone = np.mean(windowsone[id1])
+                    meanvaluetwo = np.mean(windowstwo[id2])
+                    diffone = windowsone[id1] -meanvalueone
+                    difftwo = windowstwo[id2] - meanvaluetwo
+                    ssd = np.sum(diffone*difftwo)
+                    ssdone = np.sum(diffone*diffone)
+                    ssdtwo = np.sum(difftwo*difftwo)
+                    list.append(ssd/(np.sqrt(ssdone*ssdtwo)+0.000001))
+                    list2.append(id2)
+                ncc = max(list)
+                id = list2[list.index(ncc)]
+                windowsone[id1]=(id,ncc)
+            self.correspondence[tags[2]]=windowsone
 
 
     def draw_correspondence(self, tags, cutoffvalue):
@@ -144,7 +162,7 @@ class FeatureOperator:
         copydict = copy.deepcopy(self.correspondence[tags[0]])
         print(copydict)
         for (key,value) in self.correspondence[tags[0]].items():
-            if value[1]< cutoffvalue:
+            if value[1]> cutoffvalue:
                 copydict.pop(key)
 
         resultImage = np.hstack((self.grayscaleImages[0], self.grayscaleImages[1]))
@@ -179,7 +197,7 @@ class FeatureOperator:
         cv.imwrite("Sift_Correspondence.jpg", result)
 
 if __name__ == "__main__":
-    tester = FeatureOperator(['hw4_Task1_Images/pair2/1.jpg','hw4_Task1_Images/pair2/2.jpg'], 3.407)
+    tester = FeatureOperator(['hw4_Task1_Images/pair1/1.jpg','hw4_Task1_Images/pair1/2.jpg'], 3.407)
     tester.build_haar_filter()
     tester.determine_corners(1, 0, "Harris1")
     tester.determine_corners(1, 1, "Harris2")
@@ -193,8 +211,9 @@ if __name__ == "__main__":
     thread_image_two.start()
     thread_image_one.join()
     thread_image_two.join()
-    tester.calculate_correspondence("SSD", ("Image1HarrisSW", "Image2HarrisSW","Image1to2SSD", "Image1to2SSDValues"))
-    image = tester.draw_correspondence(("Image1to2SSD", "Image1to2SSDValues"), 10000)
+    # tester.calculate_correspondence("SSD", ("Image1HarrisSW", "Image2HarrisSW","Image1to2SSD", "Image1to2SSDValues"))
+    tester.calculate_correspondence("NCC", ("Image1HarrisSW", "Image2HarrisSW", "Image1to2NCC", "Image1to2NCCValues"))
+    image = tester.draw_correspondence(("Image1to2NCC", "Image1to2NCCValues"), 0.97)
     cv.imwrite("result.jpg", image)
 
     # tester.sift_corner_detect(0, "Sift1")
