@@ -107,7 +107,14 @@ class FeatureOperator:
                 break
             row = points[index]
             column = points[index+2]
-            dict[(row, column)] = self.grayscaleImages[queueImage][row:row+windowsize, column:column+windowsize]
+            array = self.grayscaleImages[queueImage][row:row+windowsize, column:column+windowsize]
+            if array.shape == (29,29):
+                dict[(row, column)] = array
+            else:
+                resultarray = np.zeros((29,29))
+                resultarray[:array.shape[0],:array.shape[1]] = array
+                dict[(row, column)] = resultarray
+
         self.slidingwindowdict[dicttag] = dict
 
     def calculate_correspondence(self, style, tags):
@@ -117,17 +124,39 @@ class FeatureOperator:
         list2 = []
         if style =="SSD":
             for id1 in windowsone:
+                list =[]
+                list2 =[]
                 for id2 in windowstwo:
                     ssd = np.sum(np.square(windowsone[id1]-windowstwo[id2]))
                     windowstwo[id2]=ssd
                     list.append(ssd)
                     list2.append(id2)
-                ssd = min(ssd)
+                ssd = min(list)
                 id = list2[list.index(ssd)]
                 windowsone[id1] = id
-            self.correspondence = windowsone
+            self.correspondence[tags[2]] = windowsone
+            self.correspondence[tags[3]] = windowstwo
+
+    def draw_correspondence(self, tags, cutoffvalue):
+        ssdvalues = dict(sorted(self.correspondence[tags[1]].items(), key=lambda x: x[1], reverse=True))
+        ssdvalues = dict(filter(lambda x: x[1]>cutoffvalue, ssdvalues.items()))
+        # copydict =dict([value,key] for key,value in self.correspondence[tags[0]].items())
+        copydict = self.correspondence[tags[0]].items()
+        print(copydict)
+        for (key,value) in ssdvalues.items():
 
 
+        resultImage = np.hstack((self.grayscaleImages[0], self.grayscaleImages[1]))
+        horizontaloffset = self.grayscaleImages[1].shape[0]
+        for (key,value) in copydict.items():
+            columnvaluetwo = key[1] + horizontaloffset
+            rowvaluetwo = key[0]
+            columnvalueone = value[1]
+            rowvalueone = value[0]
+            cv.line(resultImage, tuple(columnvalueone,rowvalueone), tuple(columnvaluetwo,rowvaluetwo), [255, 255, 255], 1 )
+            cv.circle(resultImage,tuple(columnvalueone, rowvalueone), 4, [255, 255, 255], 10)
+            cv.circle(resultImage, tuple(columnvaluetwo, rowvaluetwo), 4, [255, 255, 255], 10)
+        return resultImage
 
     def print(self):
         print(self.correspondence)
@@ -151,7 +180,7 @@ class FeatureOperator:
         cv.imwrite("Sift_Correspondence.jpg", result)
 
 if __name__ == "__main__":
-    tester = FeatureOperator(['hw4_Task1_Images/pair3/1.jpg','hw4_Task1_Images/pair3/2.jpg'], 1.407)
+    tester = FeatureOperator(['hw4_Task1_Images/pair3/1.jpg','hw4_Task1_Images/pair3/2.jpg'], 2.407)
     tester.build_haar_filter()
     tester.determine_corners(1, 0, "Harris1")
     tester.determine_corners(1, 1, "Harris2")
@@ -165,8 +194,10 @@ if __name__ == "__main__":
     thread_image_two.start()
     thread_image_one.join()
     thread_image_two.join()
-    tester.calculate_correspondence("SSD", ("Image1HarrisSW", "Image2HarrisSW"))
+    tester.calculate_correspondence("SSD", ("Image1HarrisSW", "Image2HarrisSW","Image1to2SSD", "Image1to2SSDValues"))
     tester.print()
+    image = tester.draw_correspondence(("Image1to2SSD", "Image1to2SSDValues"), 1000)
+    cv.imwrite("result.jpg", image)
 
     # tester.sift_corner_detect(0, "Sift1")
     # tester.sift_corner_detect(1, "Sift2")
