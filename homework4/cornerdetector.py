@@ -34,8 +34,8 @@ class FeatureOperator:
         self.correspondence = {}
         self.kvalue = kvalue
         for i in range(len(self.image_addresses)):
-            self.originalImages.append(cv.imread(self.image_addresses[i]))
-            self.grayscaleImages.append(cv.cvtColor(cv.imread(self.image_addresses[i]), cv.COLOR_BGR2GRAY))
+            self.originalImages.append(cv.resize(cv.imread(self.image_addresses[i]),(640,480)))
+            self.grayscaleImages.append(cv.resize(cv.cvtColor(cv.imread(self.image_addresses[i]), cv.COLOR_BGR2GRAY),(640,480)))
         self.siftobject = cv.SIFT_create()
 
     def build_haar_filter(self):
@@ -65,11 +65,11 @@ class FeatureOperator:
     def draw_corner_points(self, queueImage, tag):
 
         points = self.cornerpointdict[tag].flatten()
+        pointXs = points[:int(len(points)/2)]
+        pointYs = points[int(len(points) / 2):]
         image = copy.deepcopy(self.originalImages[queueImage])
-        for index in range(len(points)):
-            if index == len(points) - 2:
-                break
-            cv.circle(image, (points[index+2], points[index]), 4, [255, 255, 255], 10)
+        for index in range(len(pointXs)):
+            cv.circle(image, (pointYs[index], pointXs[index]), 4, [255, 255, 255], 10)
         return image
 
     def determine_corners(self, type, queueImage, tag):
@@ -102,11 +102,11 @@ class FeatureOperator:
     def get_sliding_windows(self, windowsize, queueImage,tag, dict, dicttag):
 
         points = self.cornerpointdict[tag].flatten()
-        for index in range(len(points)):
-            if index == len(points) - 2:
-                break
-            row = points[index]
-            column = points[index+2]
+        pointXs = points[:int(len(points)/2)]
+        pointYs = points[int(len(points) / 2):]
+        for index in range(len(pointXs)):
+            row = pointXs[index]
+            column = pointYs[index]
             array = self.grayscaleImages[queueImage][row:row+windowsize, column:column+windowsize]
             if array.shape == (29,29):
                 dict[(row, column)] = array
@@ -127,40 +127,40 @@ class FeatureOperator:
                 list =[]
                 list2 =[]
                 for id2 in windowstwo:
-                    ssd = np.sum(np.square(windowsone[id1]-windowstwo[id2]))
+                    difference = windowsone[id1]-windowstwo[id2]
+                    ssd = np.sum(difference*difference)
                     windowstwo[id2]=ssd
                     list.append(ssd)
                     list2.append(id2)
                 ssd = min(list)
                 id = list2[list.index(ssd)]
-                windowsone[id1] = id
+                windowsone[id1] = (id,ssd)
             self.correspondence[tags[2]] = windowsone
             self.correspondence[tags[3]] = windowstwo
 
     def draw_correspondence(self, tags, cutoffvalue):
-        ssdvalues = dict(sorted(self.correspondence[tags[1]].items(), key=lambda x: x[1], reverse=True))
-        ssdvalues = dict(filter(lambda x: x[1]>cutoffvalue, ssdvalues.items()))
+        # ssdvalues = dict(sorted(self.correspondence[tags[1]].items(), key=lambda x: x[1], reverse=True))
+        # ssdvalues = dict(filter(lambda x: x[1]>cutoffvalue, ssdvalues.items()))
         # copydict =dict([value,key] for key,value in self.correspondence[tags[0]].items())
-        copydict = self.correspondence[tags[0]].items()
+        copydict = copy.deepcopy(self.correspondence[tags[0]])
         print(copydict)
-        for (key,value) in ssdvalues.items():
-
+        for (key,value) in self.correspondence[tags[0]].items():
+            if value[1]< cutoffvalue:
+                copydict.pop(key)
 
         resultImage = np.hstack((self.grayscaleImages[0], self.grayscaleImages[1]))
         horizontaloffset = self.grayscaleImages[1].shape[0]
+        print(copydict)
         for (key,value) in copydict.items():
-            columnvaluetwo = key[1] + horizontaloffset
-            rowvaluetwo = key[0]
-            columnvalueone = value[1]
-            rowvalueone = value[0]
-            cv.line(resultImage, tuple(columnvalueone,rowvalueone), tuple(columnvaluetwo,rowvaluetwo), [255, 255, 255], 1 )
-            cv.circle(resultImage,tuple(columnvalueone, rowvalueone), 4, [255, 255, 255], 10)
-            cv.circle(resultImage, tuple(columnvaluetwo, rowvaluetwo), 4, [255, 255, 255], 10)
+            # print((key,value))
+            columnvalueone = key[1]
+            rowvalueone = key[0]
+            columnvaluetwo = value[0][1] + horizontaloffset
+            rowvaluetwo = value[0][0]
+            cv.line(resultImage, (columnvalueone,rowvalueone), (columnvaluetwo,rowvaluetwo), [255, 255, 255], 1 )
+            cv.circle(resultImage,(columnvalueone, rowvalueone), 4, [255, 255, 255], 10)
+            cv.circle(resultImage, (columnvaluetwo, rowvaluetwo), 4, [255, 255, 255], 10)
         return resultImage
-
-    def print(self):
-        print(self.correspondence)
-
 
     def sift_corner_detect(self, queueImage, tag):
         keypoint, descriptor = self.siftobject.detectAndCompute(self.grayscaleImages[queueImage], None)
@@ -180,7 +180,7 @@ class FeatureOperator:
         cv.imwrite("Sift_Correspondence.jpg", result)
 
 if __name__ == "__main__":
-    tester = FeatureOperator(['hw4_Task1_Images/pair3/1.jpg','hw4_Task1_Images/pair3/2.jpg'], 2.407)
+    tester = FeatureOperator(['hw4_Task1_Images/pair2/1.jpg','hw4_Task1_Images/pair2/2.jpg'], 3.407)
     tester.build_haar_filter()
     tester.determine_corners(1, 0, "Harris1")
     tester.determine_corners(1, 1, "Harris2")
@@ -188,15 +188,14 @@ if __name__ == "__main__":
     cv.imwrite("1.jpg", image)
     image = tester.draw_corner_points(1, "Harris2")
     cv.imwrite("2.jpg", image)
-    thread_image_one = threading.Thread(target=tester.get_sliding_windows, args=(10,0,"Harris1",dict(),"Image1HarrisSW",))
-    thread_image_two = threading.Thread(target=tester.get_sliding_windows, args=(10, 1, "Harris2", dict(), "Image2HarrisSW", ))
+    thread_image_one = threading.Thread(target=tester.get_sliding_windows, args=(21,0,"Harris1",dict(),"Image1HarrisSW",))
+    thread_image_two = threading.Thread(target=tester.get_sliding_windows, args=(21, 1, "Harris2", dict(), "Image2HarrisSW", ))
     thread_image_one.start()
     thread_image_two.start()
     thread_image_one.join()
     thread_image_two.join()
     tester.calculate_correspondence("SSD", ("Image1HarrisSW", "Image2HarrisSW","Image1to2SSD", "Image1to2SSDValues"))
-    tester.print()
-    image = tester.draw_correspondence(("Image1to2SSD", "Image1to2SSDValues"), 1000)
+    image = tester.draw_correspondence(("Image1to2SSD", "Image1to2SSDValues"), 10000000)
     cv.imwrite("result.jpg", image)
 
     # tester.sift_corner_detect(0, "Sift1")
