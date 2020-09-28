@@ -2,7 +2,7 @@
 Computer Vision - Purdue University - Homework 4
 
 Author : Arjun Kramadhati Gopi, MS-Computer & Information Technology, Purdue University.
-Date: September 27, 2020
+Date: September 28, 2020
 
 
 [TO RUN CODE]: python3 cornerdetector.py
@@ -23,6 +23,14 @@ import threading
 class FeatureOperator:
 
     def __init__(self, image_addresses, scale, kvalue=0):
+        """
+        Initialise the FeatureOperator object. This class can detect corner in an image either by the custom
+        built Harris detector or the OpenCV SIFT corner detector. The class can also detect correspondence in
+        a given pair of similar pictures either by SSD or NCC or the eucledian distance method.
+        :param image_addresses: List of images to work with. In this case it a pair of images.
+        :param scale: Scale value used to detecting the corners.
+        :param kvalue: K value is the constant used in the equation to calculate the Harris response.
+        """
         self.image_addresses = image_addresses
         self.scale = scale
         self.originalImages = []
@@ -39,6 +47,10 @@ class FeatureOperator:
         self.siftobject = cv.SIFT_create()
 
     def build_haar_filter(self):
+        """
+        Builds the two Haar filters to obtain dx and dy values by convolving over the images
+        :return: None. Adds the filters to a global dictionary self.filters
+        """
         mvalue = int(np.ceil(4 * self.scale))
         mvalue = mvalue + 1 if (mvalue % 2) > 0 else mvalue
         blankfilter = np.ones((mvalue, mvalue))
@@ -49,6 +61,17 @@ class FeatureOperator:
         self.filters["HaarFilterY"] = blankfilter
 
     def filter_corner_points(self, rscore, windowsize, queueImage, tag):
+        """
+        From the list of the proposed potential corner points, we apply a type of non-maxima suppression
+        to avoid the case of 'overlapping interest points'. That is, we pick the most promisin corner point
+        by picking only the one with the highest R-score or Harris response in a given window.
+        :param rscore: Harris response as calculated for all the pixels in the image
+        :param windowsize: This is currently set to a 29x29 pixel window sixe.We filter for corner points
+        within these windows.
+        :param queueImage: Index of the location at which the image under consideration is stored in the list
+        :param tag: Values to access and store values by key in the dictionaries
+        :return: None. Adds values to a global dictionary self.cornerpointdict
+        """
         window = int(windowsize / 2)
         for column in range(window, self.grayscaleImages[queueImage].shape[1] - window, 1):
             for row in range(window, self.grayscaleImages[queueImage].shape[0] - window, 1):
@@ -63,7 +86,13 @@ class FeatureOperator:
         print(len(np.asarray(np.where(rscore > 0))[0]))
 
     def draw_corner_points(self, queueImage, tag):
-
+        """
+        We use this function to draw the corner points detected by the custom built Harris corner
+        detector.
+        :param queueImage: Index of the location at which the image under consideration is stored in the list
+        :param tag: Values to access and store values by key in the dictionaries
+        :return: Returns the image with the corner points drawn
+        """
         points = self.cornerpointdict[tag].flatten()
         pointXs = points[:int(len(points)/2)]
         pointYs = points[int(len(points) / 2):]
@@ -73,6 +102,15 @@ class FeatureOperator:
         return image
 
     def determine_corners(self, type, queueImage, tag):
+        """
+        This function is used to calculate the Rscore values or the Harris response values. From these
+        values, we determine the final list of corner points after filtering them in the filter_corner_points()
+        function.
+        :param type: To specify the type of method being deployed to find the corner.
+        :param queueImage: Index of the location at which the image under consideration is stored in the list
+        :param tag: Values to access and store values by key in the dictionaries
+        :return: None. Calls the filter_corner_points() function by giving the Rscore values.
+        """
         if type == 1:
             # Harris Corner Method
             dx = sg.convolve2d(self.grayscaleImages[queueImage], self.filters["HaarFilterX"], mode='same')
@@ -97,10 +135,18 @@ class FeatureOperator:
             print(Rscore.shape)
             self.filter_corner_points(Rscore, 29, queueImage, tag)
 
-    # def harris_correspondence(self,queueImages, tags):
-
     def get_sliding_windows(self, windowsize, queueImage,tag, dict, dicttag):
-
+        """
+        This function generates the neighborhood boxes around each corner point in the pair of images.
+        These neighborhood boxes or some windowsize (21X21) and they are used to calculate the SSD/NCC values
+        to determine correspondence points in the given pair of images.
+        :param windowsize: Size of neighborhood boxes
+        :param queueImage: Index of the location at which the image under consideration is stored in the list
+        :param tag: Values to access and store values by key in the dictionaries
+        :param dict: Empty dictionary object for the two simultaneous thread that run this function.
+        :param dicttag: Values to access and store values by key in the dictionaries
+        :return: None. Stores the windows in the global dictionary self.slidingwindowdict
+        """
         points = self.cornerpointdict[tag].flatten()
         pointXs = points[:int(len(points)/2)]
         pointYs = points[int(len(points) / 2):]
@@ -118,6 +164,15 @@ class FeatureOperator:
         self.slidingwindowdict[dicttag] = dict
 
     def calculate_correspondence(self, style, tags):
+        """
+        This function calculates the correspondence between the two images in the pair.
+        The methods employed in this function are 1) SSD and 2) NCC. We use either one to
+        calculte the correspondence.
+        :param style: Either SSD or NCC method to calculate correspondence.
+        :param tags: Values to access and store values by key in the dictionaries
+        :return: None. Stores the correpondece/the matching pairs of points in the a global dictionary
+        self.correspondence
+        """
         windowsone = copy.deepcopy(self.slidingwindowdict[tags[0]])
         windowstwo = copy.deepcopy(self.slidingwindowdict[tags[1]])
         list = []
@@ -155,9 +210,16 @@ class FeatureOperator:
             self.correspondence[tags[2]]=windowsone
 
     def draw_correspondence(self, tags, cutoffvalue, style):
-        # ssdvalues = dict(sorted(self.correspondence[tags[1]].items(), key=lambda x: x[1], reverse=True))
-        # ssdvalues = dict(filter(lambda x: x[1]>cutoffvalue, ssdvalues.items()))
-        # copydict =dict([value,key] for key,value in self.correspondence[tags[0]].items())
+        """
+        This function draws the correspondence between the corner points in the pair of images. We denote each
+        corner point by a small circle around it. The correspondence is denoted by a line connecting the two points.
+        Before drawing the points, we first filter the correspondences based on a cutoff value so that we retain only
+        fairly accurate matches and not completely-off matches.
+        :param tags: Values to access and store values by key in the dictionaries
+        :param cutoffvalue: Value used to filter the list of matched corner points
+        :param style: Either filter values above the cutoff value or filter the values below it.
+        :return: Returns the resultant stitched image with the denoted correspondence lines.
+        """
         copydict = copy.deepcopy(self.correspondence[tags[0]])
         print(copydict)
         for (key,value) in self.correspondence[tags[0]].items():
@@ -182,12 +244,29 @@ class FeatureOperator:
         return resultImage
 
     def sift_corner_detect(self, queueImage, tag):
+        """
+        This function detected and computes the sift keypoints and the descriptors. We use the generated keypoints
+        to draw them on the picture. These are the detected corners.
+        :param queueImage: Index of the location at which the image under consideration is stored in the list
+        :param tag: Values to access and store values by key in the dictionaries
+        :return: None. Stores the image.
+        """
         keypoint, descriptor = self.siftobject.detectAndCompute(self.grayscaleImages[queueImage], None)
         self.cornerpointdict[tag] = (keypoint, descriptor)
         img = cv.drawKeypoints(self.grayscaleImages[queueImage], keypoint, self.originalImages[queueImage], flags=cv.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
         cv.imwrite(tag + '.jpg', img)
 
     def sift_correpondence(self, queueImages, tags, method):
+        """
+        This function estimates the correspondences between the sift corners detected in the pair of images.
+        We have two options to estimate this: 1) Using BFMatcher function of OpenCV to get K-Nearest
+        Neighbors or 2) Use a custom built
+        eucledian distance based estimator
+        :param queueImages: Index of the location at which the image under consideration is stored in the list
+        :param tags: Values to access and store values by key in the dictionaries
+        :param method: Use BFMatcher or custom built eucledian matcher.
+        :return: None. Stores the matched keypoints in a global dictionary self.correspondence
+        """
         (keypoint1, descriptor1) = self.cornerpointdict[tags[0]]
         (keypoint2, descriptor2) = self.cornerpointdict[tags[1]]
         if method =='OpenCV':
@@ -210,10 +289,13 @@ class FeatureOperator:
                 minimumvalue = min(list)
                 id = list2[list.index(minimumvalue)]
                 tempdict[(int(keypoint1[index].pt[0]),int(keypoint1[index].pt[1]))]=((int(id.pt[0]),int(id.pt[1])),minimumvalue)
-            self.correspondence[tags[2]]= tempdict
+            self.correspondence[tags[2]] = tempdict
 
 
 if __name__ == "__main__":
+    """
+    Code starts here. After each run, change images to get results for a new set of image pair. 
+    """
     tester = FeatureOperator(['hw4_Task1_Images/pair2/1.jpg','hw4_Task1_Images/pair2/2.jpg'], 3.407)
     # tester.build_haar_filter()
     # tester.determine_corners(1, 0, "Harris1")
