@@ -22,7 +22,7 @@ import threading
 
 class FeatureOperator:
 
-    def __init__(self, image_addresses, scale, kvalue=0):
+    def __init__(self, image_addresses, scale, kvalue=0.04):
         """
         Initialise the FeatureOperator object. This class can detect corner in an image either by the custom
         built Harris detector or the OpenCV SIFT corner detector. The class can also detect correspondence in
@@ -72,18 +72,24 @@ class FeatureOperator:
         :param tag: Values to access and store values by key in the dictionaries
         :return: None. Adds values to a global dictionary self.cornerpointdict
         """
+
         window = int(windowsize / 2)
         for column in range(window, self.grayscaleImages[queueImage].shape[1] - window, 1):
             for row in range(window, self.grayscaleImages[queueImage].shape[0] - window, 1):
                 panwindow = rscore[row - window:row + window +1, column - window : column + window +1]
-                print(panwindow.shape)
+                #print(panwindow.shape)
                 if rscore[row, column] == np.amax(panwindow):
                     pass
                 else:
                     rscore[row, column] = 0
-
-        self.cornerpointdict[tag] = np.asarray(np.where(rscore > 0))
-        print(len(np.asarray(np.where(rscore > 0))[0]))
+        # self.cornerpointdict[tag] = rscore
+        print("Here")
+        rscoretemp = copy.deepcopy(rscore)
+        rscoretemp =rscoretemp.flatten()
+        Rcutoffvalue = rscoretemp[np.argsort(rscoretemp)[-100:]][0]
+        self.cornerpointdict[tag] = np.asarray(np.where(rscore >= Rcutoffvalue))
+        print("Here")
+        #print(len(np.asarray(np.where(rscore > 0))[0]))
 
     def draw_corner_points(self, queueImage, tag):
         """
@@ -98,7 +104,7 @@ class FeatureOperator:
         pointYs = points[int(len(points) / 2):]
         image = copy.deepcopy(self.originalImages[queueImage])
         for index in range(len(pointXs)):
-            cv.circle(image, (pointYs[index], pointXs[index]), 4, [255, 255, 255], 10)
+            cv.circle(image, (int(pointYs[index]), int(pointXs[index])), 2, [0, 0, 0], 2)
         return image
 
     def determine_corners(self, type, queueImage, tag):
@@ -125,7 +131,7 @@ class FeatureOperator:
             sumofdysquared = sg.convolve2d(dysquared, window, mode='same')
             sumofdxdy = sg.convolve2d(dxy, window, mode='same')
             detvalue = (sumofdxsquared * sumofdysquared) - (sumofdxdy * sumofdxdy)
-            tracevalue = sumofdysquared * sumofdxsquared
+            tracevalue = sumofdysquared + sumofdxsquared
             if self.kvalue == 0:
                 self.kvalue = detvalue / (tracevalue * tracevalue + 0.000001)
                 self.kvalue = np.sum(self.kvalue) / (
@@ -238,9 +244,9 @@ class FeatureOperator:
             rowvalueone = key[0]
             columnvaluetwo = value[0][1] + horizontaloffset
             rowvaluetwo = value[0][0]
-            cv.line(resultImage, (columnvalueone,rowvalueone), (columnvaluetwo,rowvaluetwo), [255, 255, 255], 1 )
-            cv.circle(resultImage,(columnvalueone, rowvalueone), 4, [255, 255, 255], 10)
-            cv.circle(resultImage, (columnvaluetwo, rowvaluetwo), 4, [255, 255, 255], 10)
+            cv.line(resultImage, (columnvalueone,rowvalueone), (columnvaluetwo,rowvaluetwo), [255, 255, 0], 1 )
+            cv.circle(resultImage,(columnvalueone, rowvalueone), 2, [0, 0, 0], 2)
+            cv.circle(resultImage, (columnvaluetwo, rowvaluetwo), 2, [0, 0, 0], 2)
         return resultImage
 
     def sift_corner_detect(self, queueImage, tag):
@@ -292,31 +298,32 @@ class FeatureOperator:
             self.correspondence[tags[2]] = tempdict
 
 
+
 if __name__ == "__main__":
     """
     Code starts here. After each run, change images to get results for a new set of image pair. 
     """
-    tester = FeatureOperator(['hw4_Task1_Images/pair2/1.jpg','hw4_Task1_Images/pair2/2.jpg'], 3.407)
-    # tester.build_haar_filter()
-    # tester.determine_corners(1, 0, "Harris1")
-    # tester.determine_corners(1, 1, "Harris2")
-    # image = tester.draw_corner_points(0,"Harris1")
-    # cv.imwrite("1.jpg", image)
-    # image = tester.draw_corner_points(1, "Harris2")
-    # cv.imwrite("2.jpg", image)
-    # thread_image_one = threading.Thread(target=tester.get_sliding_windows, args=(21,0,"Harris1",dict(),"Image1HarrisSW",))
-    # thread_image_two = threading.Thread(target=tester.get_sliding_windows, args=(21, 1, "Harris2", dict(), "Image2HarrisSW", ))
-    # thread_image_one.start()
-    # thread_image_two.start()
-    # thread_image_one.join()
-    # thread_image_two.join()
-    # # tester.calculate_correspondence("SSD", ("Image1HarrisSW", "Image2HarrisSW","Image1to2SSD", "Image1to2SSDValues"))
-    # tester.calculate_correspondence("NCC", ("Image1HarrisSW", "Image2HarrisSW", "Image1to2NCC", "Image1to2NCCValues"))
-    # image = tester.draw_correspondence(("Image1to2NCC", "Image1to2NCCValues"), 0.97, 'greaterthan')
-    # cv.imwrite("result.jpg", image)
-
-    tester.sift_corner_detect(0, "Sift1")
-    tester.sift_corner_detect(1, "Sift2")
-    tester.sift_correpondence((0, 1), ("Sift1","Sift2","Image1to2Eucledian"),'Custom')
-    image=tester.draw_correspondence(("Image1to2Eucledian","Image1to2Eucledianvalues"),200, 'greaterthan')
+    tester = FeatureOperator(['hw4_Task1_Images/pair3/1.jpg','hw4_Task1_Images/pair3/2.jpg'], 0.7)
+    tester.build_haar_filter()
+    tester.determine_corners(1, 0, "Harris1")
+    tester.determine_corners(1, 1, "Harris2")
+    image = tester.draw_corner_points(0,"Harris1")
+    cv.imwrite("1.jpg", image)
+    image = tester.draw_corner_points(1, "Harris2")
+    cv.imwrite("2.jpg", image)
+    thread_image_one = threading.Thread(target=tester.get_sliding_windows, args=(21,0,"Harris1",dict(),"Image1HarrisSW",))
+    thread_image_two = threading.Thread(target=tester.get_sliding_windows, args=(21, 1, "Harris2", dict(), "Image2HarrisSW", ))
+    thread_image_one.start()
+    thread_image_two.start()
+    thread_image_one.join()
+    thread_image_two.join()
+    # tester.calculate_correspondence("SSD", ("Image1HarrisSW", "Image2HarrisSW","Image1to2SSD", "Image1to2SSDValues"))
+    tester.calculate_correspondence("SSD", ("Image1HarrisSW", "Image2HarrisSW", "Image1to2NCC", "Image1to2NCCValues"))
+    image = tester.draw_correspondence(("Image1to2NCC", "Image1to2NCCValues"), 1000000, 'greaterthan')
     cv.imwrite("result.jpg", image)
+
+    # tester.sift_corner_detect(0, "Sift1")
+    # tester.sift_corner_detect(1, "Sift2")
+    # tester.sift_correpondence((0, 1), ("Sift1","Sift2","Image1to2Eucledian"),'Custom')
+    # image=tester.draw_correspondence(("Image1to2Eucledian","Image1to2Eucledianvalues"),200, 'greaterthan')
+    # cv.imwrite("result.jpg", image)
