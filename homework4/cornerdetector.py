@@ -154,17 +154,19 @@ class FeatureOperator:
                 windowsone[id1]=(id,ncc)
             self.correspondence[tags[2]]=windowsone
 
-
-    def draw_correspondence(self, tags, cutoffvalue):
+    def draw_correspondence(self, tags, cutoffvalue, style):
         # ssdvalues = dict(sorted(self.correspondence[tags[1]].items(), key=lambda x: x[1], reverse=True))
         # ssdvalues = dict(filter(lambda x: x[1]>cutoffvalue, ssdvalues.items()))
         # copydict =dict([value,key] for key,value in self.correspondence[tags[0]].items())
         copydict = copy.deepcopy(self.correspondence[tags[0]])
         print(copydict)
         for (key,value) in self.correspondence[tags[0]].items():
-            if value[1]> cutoffvalue:
-                copydict.pop(key)
-
+            if style == 'greaterthan':
+                if value[1]> cutoffvalue:
+                    copydict.pop(key)
+            elif style == 'lesserthan':
+                if value[1]< cutoffvalue:
+                    copydict.pop(key)
         resultImage = np.hstack((self.grayscaleImages[0], self.grayscaleImages[1]))
         horizontaloffset = 640
         print(copydict)
@@ -185,37 +187,53 @@ class FeatureOperator:
         img = cv.drawKeypoints(self.grayscaleImages[queueImage], keypoint, self.originalImages[queueImage], flags=cv.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
         cv.imwrite(tag + '.jpg', img)
 
-    def sift_correpondence(self, queueImages, tags):
+    def sift_correpondence(self, queueImages, tags, method):
         (keypoint1, descriptor1) = self.cornerpointdict[tags[0]]
         (keypoint2, descriptor2) = self.cornerpointdict[tags[1]]
-        matchedpoints = cv.BFMatcher().knnMatch(descriptor1, descriptor2, k=2)
-        filteredmatchedpoints = []
-        for pointone, pointtwo in matchedpoints:
-            if pointone.distance < (pointtwo.distance * 0.75):
-                filteredmatchedpoints.append([pointone])
-        result = cv.drawMatchesKnn(self.grayscaleImages[queueImages[0]], keypoint1, self.grayscaleImages[queueImages[1]],keypoint2, filteredmatchedpoints,None, flags=2)
-        cv.imwrite("Sift_Correspondence.jpg", result)
+        if method =='OpenCV':
+            matchedpoints = cv.BFMatcher().knnMatch(descriptor1, descriptor2, k=2)
+            filteredmatchedpoints = []
+            for pointone, pointtwo in matchedpoints:
+                if pointone.distance < (pointtwo.distance * 0.75):
+                    filteredmatchedpoints.append([pointone])
+            result = cv.drawMatchesKnn(self.grayscaleImages[queueImages[0]], keypoint1, self.grayscaleImages[queueImages[1]],keypoint2, filteredmatchedpoints,None, flags=2)
+            cv.imwrite("Sift_Correspondence.jpg", result)
+        elif method =='Custom':
+            tempdict = dict()
+            for index,element in enumerate(descriptor1):
+                list = []
+                list2 = []
+                for index2, element2 in enumerate(descriptor2):
+                    euclediandistance = np.sqrt(np.sum(np.square((element-element2))))
+                    list.append(euclediandistance)
+                    list2.append(index2)
+                minimumvalue = min(list)
+                id = list2[list.index(minimumvalue)]
+                tempdict[index]=(id,minimumvalue)
+            self.correspondence[tags[2]]= tempdict
+
 
 if __name__ == "__main__":
     tester = FeatureOperator(['hw4_Task1_Images/pair1/1.jpg','hw4_Task1_Images/pair1/2.jpg'], 3.407)
-    tester.build_haar_filter()
-    tester.determine_corners(1, 0, "Harris1")
-    tester.determine_corners(1, 1, "Harris2")
-    image = tester.draw_corner_points(0,"Harris1")
-    cv.imwrite("1.jpg", image)
-    image = tester.draw_corner_points(1, "Harris2")
-    cv.imwrite("2.jpg", image)
-    thread_image_one = threading.Thread(target=tester.get_sliding_windows, args=(21,0,"Harris1",dict(),"Image1HarrisSW",))
-    thread_image_two = threading.Thread(target=tester.get_sliding_windows, args=(21, 1, "Harris2", dict(), "Image2HarrisSW", ))
-    thread_image_one.start()
-    thread_image_two.start()
-    thread_image_one.join()
-    thread_image_two.join()
-    # tester.calculate_correspondence("SSD", ("Image1HarrisSW", "Image2HarrisSW","Image1to2SSD", "Image1to2SSDValues"))
-    tester.calculate_correspondence("NCC", ("Image1HarrisSW", "Image2HarrisSW", "Image1to2NCC", "Image1to2NCCValues"))
-    image = tester.draw_correspondence(("Image1to2NCC", "Image1to2NCCValues"), 0.97)
-    cv.imwrite("result.jpg", image)
+    # tester.build_haar_filter()
+    # tester.determine_corners(1, 0, "Harris1")
+    # tester.determine_corners(1, 1, "Harris2")
+    # image = tester.draw_corner_points(0,"Harris1")
+    # cv.imwrite("1.jpg", image)
+    # image = tester.draw_corner_points(1, "Harris2")
+    # cv.imwrite("2.jpg", image)
+    # thread_image_one = threading.Thread(target=tester.get_sliding_windows, args=(21,0,"Harris1",dict(),"Image1HarrisSW",))
+    # thread_image_two = threading.Thread(target=tester.get_sliding_windows, args=(21, 1, "Harris2", dict(), "Image2HarrisSW", ))
+    # thread_image_one.start()
+    # thread_image_two.start()
+    # thread_image_one.join()
+    # thread_image_two.join()
+    # # tester.calculate_correspondence("SSD", ("Image1HarrisSW", "Image2HarrisSW","Image1to2SSD", "Image1to2SSDValues"))
+    # tester.calculate_correspondence("NCC", ("Image1HarrisSW", "Image2HarrisSW", "Image1to2NCC", "Image1to2NCCValues"))
+    # image = tester.draw_correspondence(("Image1to2NCC", "Image1to2NCCValues"), 0.97, 'greaterthan')
+    # cv.imwrite("result.jpg", image)
 
-    # tester.sift_corner_detect(0, "Sift1")
-    # tester.sift_corner_detect(1, "Sift2")
-    # tester.sift_correpondence((0, 1), ("Sift1","Sift2"))
+    tester.sift_corner_detect(0, "Sift1")
+    tester.sift_corner_detect(1, "Sift2")
+    tester.sift_correpondence((0, 1), ("Sift1","Sift2","Image1to2Eucledian"),'Custom')
+    tester.draw_correspondence(("Image1to2Eucledian","Image1to2Eucledianvalues"),1000, 'greaterthan')
