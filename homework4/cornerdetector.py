@@ -206,15 +206,15 @@ class FeatureOperator:
                 for index2, element2 in enumerate(descriptor2):
                     euclediandistance = np.sqrt(np.sum(np.square((element-element2))))
                     list.append(euclediandistance)
-                    list2.append(index2)
+                    list2.append(keypoint2[index2])
                 minimumvalue = min(list)
                 id = list2[list.index(minimumvalue)]
-                tempdict[index]=(id,minimumvalue)
+                tempdict[(int(keypoint1[index].pt[0]),int(keypoint1[index].pt[1]))]=((int(id.pt[0]),int(id.pt[1])),minimumvalue)
             self.correspondence[tags[2]]= tempdict
 
 
 if __name__ == "__main__":
-    tester = FeatureOperator(['hw4_Task1_Images/pair1/1.jpg','hw4_Task1_Images/pair1/2.jpg'], 3.407)
+    tester = FeatureOperator(['hw4_Task1_Images/pair2/1.jpg','hw4_Task1_Images/pair2/2.jpg'], 3.407)
     # tester.build_haar_filter()
     # tester.determine_corners(1, 0, "Harris1")
     # tester.determine_corners(1, 1, "Harris2")
@@ -236,4 +236,5 @@ if __name__ == "__main__":
     tester.sift_corner_detect(0, "Sift1")
     tester.sift_corner_detect(1, "Sift2")
     tester.sift_correpondence((0, 1), ("Sift1","Sift2","Image1to2Eucledian"),'Custom')
-    tester.draw_correspondence(("Image1to2Eucledian","Image1to2Eucledianvalues"),1000, 'greaterthan')
+    image=tester.draw_correspondence(("Image1to2Eucledian","Image1to2Eucledianvalues"),200, 'greaterthan')
+    cv.imwrite("result.jpg", image)
