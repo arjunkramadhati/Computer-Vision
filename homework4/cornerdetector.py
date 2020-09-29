@@ -299,6 +299,7 @@ class FeatureOperator:
             for index,element in enumerate(descriptor1):
                 list = []
                 list2 = []
+
                 for index2, element2 in enumerate(descriptor2):
                     euclediandistance = np.sqrt(np.sum(np.square((element-element2))))
                     list.append(euclediandistance)
