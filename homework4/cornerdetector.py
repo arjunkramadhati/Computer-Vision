@@ -66,7 +66,7 @@ class FeatureOperator:
         to avoid the case of 'overlapping interest points'. That is, we pick the most promisin corner point
         by picking only the one with the highest R-score or Harris response in a given window.
         :param rscore: Harris response as calculated for all the pixels in the image
-        :param windowsize: This is currently set to a 29x29 pixel window sixe.We filter for corner points
+        :param windowsize: This is currently set to a 29x29 pixel window size.We filter for corner points
         within these windows.
         :param queueImage: Index of the location at which the image under consideration is stored in the list
         :param tag: Values to access and store values by key in the dictionaries
@@ -104,7 +104,7 @@ class FeatureOperator:
         pointYs = points[int(len(points) / 2):]
         image = copy.deepcopy(self.originalImages[queueImage])
         for index in range(len(pointXs)):
-            cv.circle(image, (int(pointYs[index]), int(pointXs[index])), 2, [0, 0, 0], 2)
+            cv.circle(image, (int(pointYs[index]), int(pointXs[index])), 2, [0, 255, 0], 2)
         return image
 
     def determine_corners(self, type, queueImage, tag):
@@ -183,35 +183,46 @@ class FeatureOperator:
         windowstwo = copy.deepcopy(self.slidingwindowdict[tags[1]])
         list = []
         list2 = []
+        list3=[]
         if style =="SSD":
+            list3=[]
             for id1 in windowsone:
                 list =[]
                 list2 =[]
                 for id2 in windowstwo:
-                    difference = windowsone[id1]-windowstwo[id2]
-                    ssd = np.sum(difference*difference)
-                    list.append(ssd)
-                    list2.append(id2)
+                    if id2 in list3:
+                        pass
+                    else:
+                        difference = windowsone[id1]-windowstwo[id2]
+                        ssd = np.sum(difference*difference)
+                        list.append(ssd)
+                        list2.append(id2)
                 ssd = min(list)
                 id = list2[list.index(ssd)]
+                list3.append(id)
                 windowsone[id1] = (id,ssd)
             self.correspondence[tags[2]] = windowsone
         if style =="NCC":
+            list3=[]
             for id1 in windowsone:
                 list =[]
                 list2=[]
                 for id2 in windowstwo:
-                    meanvalueone = np.mean(windowsone[id1])
-                    meanvaluetwo = np.mean(windowstwo[id2])
-                    diffone = windowsone[id1] -meanvalueone
-                    difftwo = windowstwo[id2] - meanvaluetwo
-                    ssd = np.sum(diffone*difftwo)
-                    ssdone = np.sum(diffone*diffone)
-                    ssdtwo = np.sum(difftwo*difftwo)
-                    list.append(ssd/(np.sqrt(ssdone*ssdtwo)+0.000001))
-                    list2.append(id2)
+                    if id2 in list3:
+                        pass
+                    else:
+                        meanvalueone = np.mean(windowsone[id1])
+                        meanvaluetwo = np.mean(windowstwo[id2])
+                        diffone = windowsone[id1] -meanvalueone
+                        difftwo = windowstwo[id2] - meanvaluetwo
+                        ssd = np.sum(diffone*difftwo)
+                        ssdone = np.sum(diffone*diffone)
+                        ssdtwo = np.sum(difftwo*difftwo)
+                        list.append(ssd/(np.sqrt(ssdone*ssdtwo)+0.000001))
+                        list2.append(id2)
                 ncc = max(list)
                 id = list2[list.index(ncc)]
+                list3.append(id)
                 windowsone[id1]=(id,ncc)
             self.correspondence[tags[2]]=windowsone
 
@@ -235,7 +246,7 @@ class FeatureOperator:
             elif style == 'lesserthan':
                 if value[1]< cutoffvalue:
                     copydict.pop(key)
-        resultImage = np.hstack((self.grayscaleImages[0], self.grayscaleImages[1]))
+        resultImage = np.hstack((self.originalImages[0], self.originalImages[1]))
         horizontaloffset = 640
         print(copydict)
         for (key,value) in copydict.items():
@@ -244,7 +255,7 @@ class FeatureOperator:
             rowvalueone = key[0]
             columnvaluetwo = value[0][1] + horizontaloffset
             rowvaluetwo = value[0][0]
-            cv.line(resultImage, (columnvalueone,rowvalueone), (columnvaluetwo,rowvaluetwo), [255, 255, 0], 1 )
+            cv.line(resultImage, (columnvalueone,rowvalueone), (columnvaluetwo,rowvaluetwo), [0, 255, 0], 1 )
             cv.circle(resultImage,(columnvalueone, rowvalueone), 2, [0, 0, 0], 2)
             cv.circle(resultImage, (columnvaluetwo, rowvaluetwo), 2, [0, 0, 0], 2)
         return resultImage
@@ -259,7 +270,7 @@ class FeatureOperator:
         """
         keypoint, descriptor = self.siftobject.detectAndCompute(self.grayscaleImages[queueImage], None)
         self.cornerpointdict[tag] = (keypoint, descriptor)
-        img = cv.drawKeypoints(self.grayscaleImages[queueImage], keypoint, self.originalImages[queueImage], flags=cv.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+        img = cv.drawKeypoints(self.grayscaleImages[queueImage], keypoint, copy.deepcopy(self.originalImages[queueImage]), flags=cv.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
         cv.imwrite(tag + '.jpg', img)
 
     def sift_correpondence(self, queueImages, tags, method):
@@ -294,7 +305,7 @@ class FeatureOperator:
                     list2.append(keypoint2[index2])
                 minimumvalue = min(list)
                 id = list2[list.index(minimumvalue)]
-                tempdict[(int(keypoint1[index].pt[0]),int(keypoint1[index].pt[1]))]=((int(id.pt[0]),int(id.pt[1])),minimumvalue)
+                tempdict[(int(keypoint1[index].pt[1]),int(keypoint1[index].pt[0]))]=((int(id.pt[1]),int(id.pt[0])),minimumvalue)
             self.correspondence[tags[2]] = tempdict
 
 
@@ -303,7 +314,8 @@ if __name__ == "__main__":
     """
     Code starts here. After each run, change images to get results for a new set of image pair. 
     """
-    tester = FeatureOperator(['hw4_Task1_Images/pair3/1.jpg','hw4_Task1_Images/pair3/2.jpg'], 0.7)
+
+    tester = FeatureOperator(['hw4_Task1_Images/pair5/1.jpg','hw4_Task1_Images/pair5/2.jpg'], 0.7)
     tester.build_haar_filter()
     tester.determine_corners(1, 0, "Harris1")
     tester.determine_corners(1, 1, "Harris2")
@@ -319,11 +331,11 @@ if __name__ == "__main__":
     thread_image_two.join()
     # tester.calculate_correspondence("SSD", ("Image1HarrisSW", "Image2HarrisSW","Image1to2SSD", "Image1to2SSDValues"))
     tester.calculate_correspondence("SSD", ("Image1HarrisSW", "Image2HarrisSW", "Image1to2NCC", "Image1to2NCCValues"))
-    image = tester.draw_correspondence(("Image1to2NCC", "Image1to2NCCValues"), 1000000, 'greaterthan')
+    image = tester.draw_correspondence(("Image1to2NCC", "Image1to2NCCValues"), 8000000, 'greaterthan')
     cv.imwrite("result.jpg", image)
 
-    # tester.sift_corner_detect(0, "Sift1")
-    # tester.sift_corner_detect(1, "Sift2")
-    # tester.sift_correpondence((0, 1), ("Sift1","Sift2","Image1to2Eucledian"),'Custom')
-    # image=tester.draw_correspondence(("Image1to2Eucledian","Image1to2Eucledianvalues"),200, 'greaterthan')
-    # cv.imwrite("result.jpg", image)
+    tester.sift_corner_detect(0, "Sift1")
+    tester.sift_corner_detect(1, "Sift2")
+    tester.sift_correpondence((0, 1), ("Sift1","Sift2","Image1to2Eucledian"),'Custom')
+    image=tester.draw_correspondence(("Image1to2Eucledian","Image1to2Eucledianvalues"),80, 'greaterthan')
+    cv.imwrite("result.jpg", image)
