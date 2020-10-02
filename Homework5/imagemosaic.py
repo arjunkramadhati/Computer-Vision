@@ -35,6 +35,10 @@ class Panorama:
             self.grayscaleImages.append(cv.resize(cv.cvtColor(cv.imread(self.image_addresses[i]), cv.COLOR_BGR2GRAY), (640, 480)))
         self.siftobject = cv.SIFT_create()
 
+    def calculate_ransac_parameters(self,correspondencedatasize, pvalue=0.99,epsilonvalue=0.20,samplesize=6 ):
+        self.ransactrials = int(math.ceil(math.log(1-pvalue)/math.log(1-math.pow(1-epsilonvalue,samplesize))))
+        self.ransaccutoffsize = int(math.ceil((1-epsilonvalue)*correspondencedatasize))
+
     def sift_corner_detect(self, queueImage, tag):
         """
         This function detected and computes the sift keypoints and the descriptors. We use the generated keypoints
@@ -68,7 +72,7 @@ class Panorama:
                 if pointone.distance < (pointtwo.distance * 0.75):
                     filteredmatchedpoints.append([pointone])
             result = cv.drawMatchesKnn(self.grayscaleImages[queueImages[0]], keypoint1, self.grayscaleImages[queueImages[1]],keypoint2, filteredmatchedpoints,None, flags=2)
-            cv.imwrite("Sift_Correspondence.jpg", result)
+            cv.imwrite(str(queueImages[0]) + "Sift_Correspondence.jpg", result)
         elif method =='Custom':
             tempdict = dict()
             for index,element in enumerate(descriptor1):
@@ -83,3 +87,13 @@ class Panorama:
                 id = list2[list.index(minimumvalue)]
                 tempdict[(int(keypoint1[index].pt[1]),int(keypoint1[index].pt[0]))]=((int(id.pt[1]),int(id.pt[0])),minimumvalue)
             self.correspondence[tags[2]] = tempdict
+
+if __name__ =='__main__':
+    tester = Panorama(['input_images/1.jpg','input_images/2.jpg', 'input_images/3.jpg', 'input_images/4.jpg',
+                       'input_images/5.jpg'], 0.707)
+    for i in range(5):
+        tester.sift_corner_detect(i, str(i))
+    print("Detected SIFT interest points in 5 images.")
+    for i in range(0,4,2):
+        tester.sift_correpondence((i,i+1),(str(i),str(i+1)), 'OpenCV')
+
