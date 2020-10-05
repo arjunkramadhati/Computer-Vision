@@ -13,6 +13,7 @@ Output:
 import cv2 as cv
 import math
 import numpy as np
+import random
 import time
 from scipy import signal as sg
 import tqdm
@@ -35,13 +36,87 @@ class Panorama:
             self.grayscaleImages.append(cv.resize(cv.cvtColor(cv.imread(self.image_addresses[i]), cv.COLOR_BGR2GRAY), (640, 480)))
         self.siftobject = cv.SIFT_create()
 
+    def get_panorama_done(self,tag):
+        correspondencedatasize = len(list(self.correspondence[tag].keys()))
+        self.calculate_ransac_parameters(correspondencedatasize)
+        self.perform_ransac(tag)
+
     def calculate_ransac_parameters(self,correspondencedatasize, pvalue=0.99,epsilonvalue=0.20,samplesize=6 ):
         self.ransactrials = int(math.ceil(math.log(1-pvalue)/math.log(1-math.pow(1-epsilonvalue,samplesize))))
         self.ransaccutoffsize = int(math.ceil((1-epsilonvalue)*correspondencedatasize))
 
-    def calculate_lls_homography(self,points):
+    def calculate_lls_homography(self,points, samplesize=6):
         homography = np.zeros((3,3))
-        a_matrix = np.zeros((len(list(points.keys()))))
+        amatrix = np.zeros((2*samplesize,9))
+
+        for index in range(samplesize):
+            amatrix[2*index] = [0,0,0,-points[i][0][0],-points[i][0][1],-1,points[i][1][1]*points[i][0][0],
+                                points[i][1][1]*points[i][0][1], points[i][1][1]]
+            amatrix[2*index +1] = [points[i][0][0],points[i][0][1],1,0,0,0,-points[i][1][0]*points[i][0][0],
+                                   -points[i][1][0]*points[i][0][1],-points[i][1][0]]
+
+        uvalue, dvalue, vvalue = np.linalg.svd(amatrix)
+        vvalueT = np.transpose(vvalue)
+        solution = vvalueT[:,-1]
+        homography[0] = solution[0:3]/solution[-1]
+        homography[1] = solution[3:6]/solution[-1]
+        homography[2] = solution[6:9]/solution[-1]
+        return homography
+
+    def perform_ransac(self,tag, samplesize=6, cutoff=3):
+        correspondence = self.correspondence[tag]
+        sourcepoints = []
+        destinationpoints = []
+        sx = list(correspondence.keys())
+        dx = list(correspondence.values())
+        for key,value in correspondence.items():
+            sourcepoints.append(key[0])
+            sourcepoints.append(key[1])
+            sourcepoints.append(1.0)
+            destinationpoints.append(value[0])
+            destinationpoints.append(value[1])
+            destinationpoints.append(1.0)
+        sourcepoints = np.array(sourcepoints, dtype='float64')
+        sourcepoints = sourcepoints.reshape(-1,3).T
+        destinationpoints = np.array(destinationpoints, dtype='float64')
+        destinationpoints = destinationpoints.reshape(-1,3).T
+        count = 0
+        listofinliersfinal =[]
+        homographyfinal =np.zeros((3,3))
+        for iteration in range(self.ransactrials):
+            print(str(iteration) + " of " + str(self.ransactrials))
+            samples =random.sample(list(correspondence.items()),samplesize)
+            estimatehomography = self.calculate_lls_homography(samples)
+            estimatedpoints = np.matmul(estimatehomography,sourcepoints)
+            # print(estimatedpoints)
+            estimatedpoints = estimatedpoints/estimatedpoints[2,:]
+            squaredifference = (estimatedpoints - destinationpoints)**2
+            sumdifference =np.sum(squaredifference, axis=0)
+            validpointsidx = np.where(sumdifference <= cutoff**2)
+            print(validpointsidx[0])
+            listofinliersleft = [sx[i] for i in validpointsidx[0]]
+            if len(listofinliersleft) > count:
+                count = len(listofinliersleft)
+                listofinliersfinal = listofinliersleft
+                homographyfinal = estimatehomography
+        print(listofinliersfinal)
+
+
+
+    def update_dict_values(self,tags):
+        tempdict = dict()
+        matchedpoints = self.correspondence[tags[2]]
+        (keypoint1, descriptor1) = self.cornerpointdict[tags[0]]
+        (keypoint2, descriptor2) = self.cornerpointdict[tags[1]]
+        for matchedpoint in matchedpoints:
+            imageoneindex = matchedpoint[0].queryIdx
+            imagetwoindex = matchedpoint[0].trainIdx
+            (x1, y1) = keypoint1[imageoneindex].pt
+            (x2, y2) = keypoint2[imagetwoindex].pt
+            tempdict[(x1,y1)]=(x2,y2)
+        self.correspondence[tags[2]] = tempdict
+        print(self.correspondence[tags[2]])
+
 
     def draw_correspondence(self, tags, cutoffvalue, style):
         """
@@ -87,8 +162,8 @@ class Panorama:
         """
         keypoint, descriptor = self.siftobject.detectAndCompute(self.grayscaleImages[queueImage], None)
         self.cornerpointdict[tag] = (keypoint, descriptor)
-        img = cv.drawKeypoints(self.grayscaleImages[queueImage], keypoint, copy.deepcopy(self.originalImages[queueImage]), flags=cv.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
-        cv.imwrite(tag + '.jpg', img)
+        #img = cv.drawKeypoints(self.grayscaleImages[queueImage], keypoint, copy.deepcopy(self.originalImages[queueImage]), flags=cv.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+        #cv.imwrite(tag + '.jpg', img)
 
     def sift_correpondence(self, queueImages, tags, method):
         """
@@ -105,13 +180,14 @@ class Panorama:
         (keypoint2, descriptor2) = self.cornerpointdict[tags[1]]
         if method =='OpenCV':
             matchedpoints = cv.BFMatcher().knnMatch(descriptor1, descriptor2, k=2)
-            print(matchedpoints)
+            #print(matchedpoints)
             filteredmatchedpoints = []
             for pointone, pointtwo in matchedpoints:
                 if pointone.distance < (pointtwo.distance * 0.75):
                     filteredmatchedpoints.append([pointone])
+            self.correspondence[tags[2]]=filteredmatchedpoints
             result = cv.drawMatchesKnn(self.grayscaleImages[queueImages[0]], keypoint1, self.grayscaleImages[queueImages[1]],keypoint2, filteredmatchedpoints,None, flags=2)
-            cv.imwrite(str(queueImages[0]) + "Sift_Correspondence.jpg", result)
+            cv.imwrite("results/"+ str(tags[2]) + ".jpg", result)
         elif method =='Custom':
             tempdict = dict()
             for index,element in enumerate(descriptor1):
@@ -133,9 +209,10 @@ if __name__ =='__main__':
     for i in range(5):
         tester.sift_corner_detect(i, str(i))
     print("Detected SIFT interest points in 5 images.")
-    for i in range(0,5,1):
+    for i in range(0,4,1):
         print(i)
-        tester.sift_correpondence((i,i+1),(str(i),str(i+1),str(i)+str(i+1)), 'Custom')
-        image = tester.draw_correspondence((str(i)+str(i+1),'value'),80,'lesserthan')
-        cv.imwrite(str(i)+str(i+1)+'.jpg', image)
-
+        tester.sift_correpondence((i,i+1),(str(i),str(i+1),str(i)+str(i+1)), 'OpenCV')
+        tester.update_dict_values((str(i),str(i+1),str(i)+str(i+1)))
+        # image = tester.draw_correspondence((str(i)+str(i+1),'value'),650,'greaterthan')
+        # cv.imwrite(str(i)+str(i+1)+'.jpg', image)
+    tester.get_panorama_done('01')
