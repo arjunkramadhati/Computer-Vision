@@ -19,6 +19,8 @@ from scipy import signal as sg
 import tqdm
 import copy
 import threading
+from scipy.optimize import least_squares
+from scipy.optimize import minimize
 
 class Panorama:
     def __init__(self, image_addresses, scale, kvalue=0.04):
@@ -30,16 +32,95 @@ class Panorama:
         self.cornerpointdict = {}
         self.slidingwindowdict = {}
         self.correspondence = {}
+        self.homographydict = {}
         self.kvalue = kvalue
         for i in range(len(self.image_addresses)):
             self.originalImages.append(cv.resize(cv.imread(self.image_addresses[i]), (640, 480)))
             self.grayscaleImages.append(cv.resize(cv.cvtColor(cv.imread(self.image_addresses[i]), cv.COLOR_BGR2GRAY), (640, 480)))
         self.siftobject = cv.SIFT_create()
 
-    def get_panorama_done(self,tag):
+    def weightedPixelValue(self, rangecoordinates, objectQueue):
+        """
+        [This function calculates the weighted pixel value at the given coordinate in the target image]
+
+        Args:
+            rangecoordinates ([list]): [This is the coordinate of the pixel in the target image]
+            objectQueue ([int]): [This is the index number of the list which has the coordinates of the roI for the Object picture]
+
+        Returns:
+            [list]: [Weighted pixel value - RGB value]
+        """
+
+        pointOne = (int(np.floor(rangecoordinates[1])), int(np.floor(rangecoordinates[0])))
+        pointTwo = (int(np.floor(rangecoordinates[1])), int(np.ceil(rangecoordinates[0])))
+        pointThree = (int(np.ceil(rangecoordinates[1])), int(np.ceil(rangecoordinates[0])))
+        pointFour = (int(np.ceil(rangecoordinates[1])), int(np.floor(rangecoordinates[0])))
+
+        pixelValueAtOne = self.originalImages[objectQueue][pointOne[0]][pointOne[1]]
+        pixelValueAtTwo = self.originalImages[objectQueue][pointTwo[0]][pointTwo[1]]
+        pixelValueAtThree = self.originalImages[objectQueue][pointThree[0]][pointThree[1]]
+        pixelValueAtFour = self.originalImages[objectQueue][pointFour[0]][pointFour[1]]
+
+        weightAtOne = 1 / np.linalg.norm(pixelValueAtOne - rangecoordinates)
+        weightAtTwo = 1 / np.linalg.norm(pixelValueAtTwo - rangecoordinates)
+        weightAtThree = 1 / np.linalg.norm(pixelValueAtThree - rangecoordinates)
+        weightAtFour = 1 / np.linalg.norm(pixelValueAtFour - rangecoordinates)
+
+        return ((weightAtOne * pixelValueAtOne) + (weightAtTwo * pixelValueAtTwo) + (
+                    weightAtThree * pixelValueAtThree) + (weightAtFour * pixelValueAtFour)) / (
+                           weightAtFour + weightAtThree + weightAtTwo + weightAtOne)
+
+    def get_panorama_done(self):
         #correspondencedatasize = len(list(self.correspondence[tag].keys()))
         self.calculate_ransac_parameters()
-        self.perform_ransac(tag)
+        for i in range(0,4,1):
+            self.perform_ransac((str(i),str(i+1),str(i)+str(i+1)))
+        self.get_product_homography()
+        self.get_panorama_image_size(('02','12','22','32','42'))
+
+    def get_panorama_image_size(self,tags):
+        cornerlist = []
+        for i in range(len(tags)):
+            endpoints = np.zeros((3,4))
+            endpoints[:,0] = [0,0,1]
+            endpoints[:,1] = [0, self.originalImages[i].shape[1], 1]
+            endpoints[:,2] = [self.originalImages[i].shape[0],0, 1]
+            endpoints[:,3] = [self.originalImages[i].shape[0],self.originalImages[i].shape[1], 1]
+            corners = np.matmul(self.homographydict[tags[i]], endpoints)
+            for i in range(corners.shape[1]):
+                corners[:, i] = corners[:, i] / corners[-1, i]
+            cornerlist.append(corners[0:2, :])
+        minvalue =np.amin(np.amin(cornerlist,2),0)
+        maxvalue = np.amax(np.amax(cornerlist, 2), 0)
+        imagesize = maxvalue - minvalue
+        pan_img = np.zeros((int(imagesize[1]), int(imagesize[0]), 3))
+        for i in range(len(tags)):
+            print(i)
+            H = np.linalg.inv(self.homographydict[tags[i]])
+            for column in range(0,pan_img.shape[0]):
+                for row in range(0,pan_img.shape[1]):
+                    sourcecoord = np.array([row+minvalue[0], column+minvalue[1], 1])
+                    destcoord = np.array(np.matmul(H,sourcecoord))
+                    destcoord = destcoord/destcoord[-1]
+                    if (destcoord[0]>0 and destcoord[1]>0 and destcoord[0]<self.originalImages[i].shape[1]-1 and destcoord[1]<self.originalImages[i].shape[0]-1):
+                        pan_img[column][row] = self.weightedPixelValue(destcoord,i)
+
+        cv.imwrite("panorama.jpg",pan_img)
+
+    def get_product_homography(self):
+        H02 = np.matmul(self.homographydict['01'], self.homographydict['12'])
+        H02 = H02/H02[-1,-1]
+        self.homographydict['02']=H02
+        H12 = self.homographydict['12']/self.homographydict['12'][-1,-1]
+        self.homographydict['12']=H12
+        H32 = np.linalg.inv(self.homographydict['23'])
+        H32 = H32/H32[-1,-1]
+        self.homographydict['32']=H32
+        H42=np.linalg.inv(np.matmul(self.homographydict['23'],self.homographydict['34']))
+        H42=H42/H42[-1,-1]
+        self.homographydict['42']=H42
+        H22 = np.identity(3)
+        self.homographydict['22']=H22
 
     def calculate_ransac_parameters(self, pvalue=0.999,epsilonvalue=0.40,samplesize=6 ):
         self.ransactrials = int((math.log(1-pvalue)/math.log(1-(1-epsilonvalue)**samplesize)))
@@ -92,9 +173,9 @@ class Panorama:
     #     # print(homography)
     #     return homography
 
-    def perform_ransac(self,tag, samplesize=6, cutoff=3):
+    def perform_ransac(self,tags, samplesize=6, cutoff=3):
 
-        correspondence = self.correspondence[tag]
+        correspondence = self.correspondence[tags[2]]
         # print(correspondence)
         src_xy = np.zeros((len(correspondence), 2))
         dest_xy = np.zeros((len(correspondence), 2))
@@ -161,10 +242,11 @@ class Panorama:
                 listofoutliersfinal =outlierlist
                 homographyfinal = H
 
+        self.homographydict[tags[2]]=homographyfinal
         print(len(listofinliersfinal))
         print(len(listofoutliersfinal))
         #self.draw_correspondence_inlier_outlier(listofinliersfinal,listofoutliersfinal)
-        self.displayImagewithInterestPointsandOutliers(self.originalImages[0],self.originalImages[1],correspondence,homographyfinal,3)
+        self.displayImagewithInterestPointsandOutliers(tags,correspondence,homographyfinal,3)
 
             # estimatehomography =np.linalg.pinv(estimatehomography)
         #     estimatedpoints = np.matmul(estimatehomography,sourcepoints)
@@ -183,8 +265,10 @@ class Panorama:
         #         homographyfinal = estimatehomography
         # print(listofinliersfinal)
 
-    def displayImagewithInterestPointsandOutliers(self, img1, img2, corners, H, delta):
+    def displayImagewithInterestPointsandOutliers(self, tags, corners, H, delta):
         # Get shape of the output image
+        img1 = self.originalImages[int(tags[0])]
+        img2 = self.originalImages[int(tags[1])]
         nrows = max(img1.shape[0], img2.shape[0])
         ncol = img1.shape[1] + img2.shape[1]
 
@@ -225,7 +309,7 @@ class Panorama:
                 cv.line(out_img, (int(src_pts[src_pt, 0]), int(src_pts[src_pt, 1])),
                          (img1.shape[1] + int(dest_pts[src_pt, 0]), int(dest_pts[src_pt, 1])), (0, 0, 255))
 
-        cv.imwrite("serder.jpg", out_img)
+        cv.imwrite("results/"+str(tags[2])+"inlieroutlier.jpg", out_img)
         #return out_img, np.array(inliers_src_list), np.array(inliers_dest_list)
 
     def draw_correspondence_inlier_outlier(self, inlierlist,outlierlist):
@@ -370,4 +454,4 @@ if __name__ =='__main__':
         tester.update_dict_values((str(i),str(i+1),str(i)+str(i+1)))
         # image = tester.draw_correspondence((str(i)+str(i+1),'value'),650,'greaterthan')
         # cv.imwrite(str(i)+str(i+1)+'.jpg', image)
-    tester.get_panorama_done('01')
+    tester.get_panorama_done()
