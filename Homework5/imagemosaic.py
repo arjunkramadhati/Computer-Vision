@@ -83,6 +83,7 @@ class Panorama:
         count = 0
         listofinliersfinal =[]
         homographyfinal =np.zeros((3,3))
+
         for iteration in range(self.ransactrials):
             print(str(iteration) + " of " + str(self.ransactrials))
             samples =random.sample(list(correspondence.items()),samplesize)
