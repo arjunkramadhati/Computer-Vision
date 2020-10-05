@@ -37,75 +37,224 @@ class Panorama:
         self.siftobject = cv.SIFT_create()
 
     def get_panorama_done(self,tag):
-        correspondencedatasize = len(list(self.correspondence[tag].keys()))
-        self.calculate_ransac_parameters(correspondencedatasize)
+        #correspondencedatasize = len(list(self.correspondence[tag].keys()))
+        self.calculate_ransac_parameters()
         self.perform_ransac(tag)
 
-    def calculate_ransac_parameters(self,correspondencedatasize, pvalue=0.99,epsilonvalue=0.20,samplesize=6 ):
-        self.ransactrials = int(math.ceil(math.log(1-pvalue)/math.log(1-math.pow(1-epsilonvalue,samplesize))))
-        self.ransaccutoffsize = int(math.ceil((1-epsilonvalue)*correspondencedatasize))
+    def calculate_ransac_parameters(self, pvalue=0.999,epsilonvalue=0.40,samplesize=6 ):
+        self.ransactrials = int((math.log(1-pvalue)/math.log(1-(1-epsilonvalue)**samplesize)))
+        # self.ransaccutoffsize = int(math.ceil((1-epsilonvalue)*correspondencedatasize))
 
-    def calculate_lls_homography(self,points, samplesize=6):
-        homography = np.zeros((3,3))
-        amatrix = np.zeros((2*samplesize,9))
+    def LinearLeastSquaresHomography(self,src_pts, dest_pts):
+        # Initialize Homography Matrix
+        H = np.zeros((3, 3))
+        # Setup the A Matrix
+        A = np.zeros((len(src_pts) * 2, 9))
+        for i in range(len(src_pts)):
+            A[i * 2] = [0, 0, 0, -src_pts[i, 0], -src_pts[i, 1], -1, dest_pts[i, 1] * src_pts[i, 0],
+                        dest_pts[i, 1] * src_pts[i, 1], dest_pts[i, 1]]
+            A[i * 2 + 1] = [src_pts[i, 0], src_pts[i, 1], 1, 0, 0, 0, -dest_pts[i, 0] * src_pts[i, 0],
+                            -dest_pts[i, 0] * src_pts[i, 1], -dest_pts[i, 0]]
 
-        for index in range(samplesize):
-            amatrix[2*index] = [0,0,0,-points[i][0][0],-points[i][0][1],-1,points[i][1][1]*points[i][0][0],
-                                points[i][1][1]*points[i][0][1], points[i][1][1]]
-            amatrix[2*index +1] = [points[i][0][0],points[i][0][1],1,0,0,0,-points[i][1][0]*points[i][0][0],
-                                   -points[i][1][0]*points[i][0][1],-points[i][1][0]]
+        # print(A)
+        # print("done")
+        # Do SVD Decomposition
+        U, D, V = np.linalg.svd(A)
+        V_T = np.transpose(V)  # Need to take transpose because rows of V are eigen vectors
+        H_elements = V_T[:, -1]  # Last column is the solution
 
-        uvalue, dvalue, vvalue = np.linalg.svd(amatrix)
-        vvalueT = np.transpose(vvalue)
-        solution = vvalueT[:,-1]
-        homography[0] = solution[0:3]/solution[-1]
-        homography[1] = solution[3:6]/solution[-1]
-        homography[2] = solution[6:9]/solution[-1]
-        return homography
+        # Fill the Homography Matrix
+        H[0] = H_elements[0:3] / H_elements[-1]
+        H[1] = H_elements[3:6] / H_elements[-1]
+        H[2] = H_elements[6:9] / H_elements[-1]
+        # H = np.linalg.pinv(H)
+        # print(H)
+        # print("done")
+        return H
+    # def calculate_lls_homography(self,points, samplesize=6):
+    #     homography = np.zeros((3,3))
+    #     amatrix = np.zeros((2*samplesize,9))
+    #     for index in range(samplesize):
+    #         amatrix[2*index] = [0,0,0,-points[i][0][0],-points[i][0][1],-1,points[i][1][1]*points[i][0][0],
+    #                             points[i][1][1]*points[i][0][1], points[i][1][1]]
+    #         amatrix[2*index +1] = [points[i][0][0],points[i][0][1],1,0,0,0,-points[i][1][0]*points[i][0][0],
+    #                                -points[i][1][0]*points[i][0][1],-points[i][1][0]]
+    #
+    #     # print(amatrix)
+    #     uvalue, dvalue, vvalue = np.linalg.svd(amatrix)
+    #     vvalueT = np.transpose(vvalue)
+    #     solution = vvalueT[:,-1]
+    #     homography[0] = solution[0:3]/solution[-1]
+    #     homography[1] = solution[3:6]/solution[-1]
+    #     homography[2] = solution[6:9]/solution[-1]
+    #     # homography =np.linalg.pinv(homography)
+    #     # homography =homography/homography[2][2]
+    #     # print(homography)
+    #     return homography
 
     def perform_ransac(self,tag, samplesize=6, cutoff=3):
+
         correspondence = self.correspondence[tag]
+        # print(correspondence)
+        src_xy = np.zeros((len(correspondence), 2))
+        dest_xy = np.zeros((len(correspondence), 2))
+        src_xy = correspondence[:, 0:2]
+        dest_xy = correspondence[:, 2:]
         sourcepoints = []
         destinationpoints = []
-        sx = list(correspondence.keys())
-        dx = list(correspondence.values())
-        for key,value in correspondence.items():
-            sourcepoints.append(key[0])
-            sourcepoints.append(key[1])
-            sourcepoints.append(1.0)
-            destinationpoints.append(value[0])
-            destinationpoints.append(value[1])
-            destinationpoints.append(1.0)
-        sourcepoints = np.array(sourcepoints, dtype='float64')
-        sourcepoints = sourcepoints.reshape(-1,3).T
-        destinationpoints = np.array(destinationpoints, dtype='float64')
-        destinationpoints = destinationpoints.reshape(-1,3).T
+        # sx = np.asarray(list(correspondence.keys()))
+        # dx = np.asarray(list(correspondence.values()))
+
+        # for key,value in correspondence.items():
+        #     sourcepoints.append(key[0])
+        #     sourcepoints.append(key[1])
+        #     sourcepoints.append(1.0)
+        #     destinationpoints.append(value[0])
+        #     destinationpoints.append(value[1])
+        #     destinationpoints.append(1.0)
+        # sourcepoints = np.array(sourcepoints, dtype='float64')
+        # sourcepoints = sourcepoints.reshape(-1,3).T
+        # destinationpoints = np.array(destinationpoints, dtype='float64')
+        # destinationpoints = destinationpoints.reshape(-1,3).T
         count = 0
         listofinliersfinal =[]
+        listofoutliersfinal = []
         homographyfinal =np.zeros((3,3))
 
         for iteration in range(self.ransactrials):
             print(str(iteration) + " of " + str(self.ransactrials))
-            samples =random.sample(list(correspondence.items()),samplesize)
-            estimatehomography = self.calculate_lls_homography(samples)
-            estimatedpoints = np.matmul(estimatehomography,sourcepoints)
-            # print(estimatedpoints)
-            estimatedpoints = estimatedpoints/estimatedpoints[2,:]
-            squaredifference = (estimatedpoints - destinationpoints)**2
-            sumdifference =np.sum(squaredifference, axis=0)
-            validpointsidx = np.where(sumdifference <= cutoff**2)
-            print(validpointsidx[0])
-            listofinliersleft = [sx[i] for i in validpointsidx[0]]
-            if len(listofinliersleft) > count:
-                count = len(listofinliersleft)
-                listofinliersfinal = listofinliersleft
-                homographyfinal = estimatehomography
-        print(listofinliersfinal)
+            print(len(src_xy))
+            ip_index = np.random.randint(0, len(src_xy), samplesize)
+            src_pts_trial = src_xy[ip_index, :]
+            dest_pts_trial = dest_xy[ip_index, :]
+
+            # Calculate Homography by SVD for n selected correspondences
+            H = self.LinearLeastSquaresHomography(src_pts_trial, dest_pts_trial)
+            # samples =random.sample(list(correspondence.items()),samplesize)
+            # print(len(samples))
+            # H = self.calculate_lls_homography(src_pts_trial, dest_pts_trial)
+            dest_pts_estimate = np.zeros((dest_xy.shape), dtype='int')
+
+            for src_pt in range(len(src_xy)):
+                dest_pts_nonNorm = np.matmul(H, ([src_xy[src_pt, 0], src_xy[src_pt, 1], 1]))
+                dest_pts_estimate[src_pt, 0] = dest_pts_nonNorm[0] / dest_pts_nonNorm[-1]
+                dest_pts_estimate[src_pt, 1] = dest_pts_nonNorm[1] / dest_pts_nonNorm[-1]
+
+            dest_pts_estimate_err = dest_pts_estimate - dest_xy
+            dest_pts_estimate_err_sq = np.square(dest_pts_estimate_err)
+            dist = np.sqrt(dest_pts_estimate_err_sq[:, 0] + dest_pts_estimate_err_sq[:, 1])
+            validpointidx = np.where(dist <= cutoff)
+            invalidpointidx = np.where(dist > cutoff)
+            innlierlist=[]
+            outlierlist =[]
+            for i,element in enumerate(dist):
+                if element <=cutoff:
+                    innlierlist.append([src_xy[i][1],src_xy[i][0],dest_pts_estimate[i][1],dest_pts_estimate[i][0] ])
+                else:
+                    outlierlist.append([src_xy[i][0], src_xy[i][1], dest_xy[i][0], dest_xy[i][1]])
 
 
+            Inliers = [1 for val in dist if (val < 3)]
+            if len(Inliers) > count:
+                count = len(Inliers)
+                listofinliersfinal =innlierlist
+                listofoutliersfinal =outlierlist
+                homographyfinal = H
+
+        print(len(listofinliersfinal))
+        print(len(listofoutliersfinal))
+        #self.draw_correspondence_inlier_outlier(listofinliersfinal,listofoutliersfinal)
+        self.displayImagewithInterestPointsandOutliers(self.originalImages[0],self.originalImages[1],correspondence,homographyfinal,3)
+
+            # estimatehomography =np.linalg.pinv(estimatehomography)
+        #     estimatedpoints = np.matmul(estimatehomography,sourcepoints)
+        #     # print(estimatedpoints)
+        #     estimatedpoints = estimatedpoints/estimatedpoints[2,:]
+        #     squaredifference = (estimatedpoints - destinationpoints)**2
+        #     # print(squaredifference)
+        #     sumdifference =np.sum(squaredifference, axis=0)
+        #     # print(sumdifference)
+        #     validpointsidx = np.where(sumdifference <= cutoff**2)
+        #     print(validpointsidx)
+        #     listofinliersleft = [sx[i] for i in validpointsidx[0]]
+        #     if len(listofinliersleft) > count:
+        #         count = len(listofinliersleft)
+        #         listofinliersfinal = listofinliersleft
+        #         homographyfinal = estimatehomography
+        # print(listofinliersfinal)
+
+    def displayImagewithInterestPointsandOutliers(self, img1, img2, corners, H, delta):
+        # Get shape of the output image
+        nrows = max(img1.shape[0], img2.shape[0])
+        ncol = img1.shape[1] + img2.shape[1]
+
+        # Initialize combined output image
+        out_img = np.zeros((nrows, ncol, 3))
+
+        # Copy Image 1 to left half of the output image
+        out_img[:img1.shape[0], :img1.shape[1]] = img1
+
+        # Copy Image 2 to right half of the output image
+        out_img[:img2.shape[0], img1.shape[1]:img1.shape[1] + img2.shape[1]] = img2
+
+        # Seperate source and destination images XY coordinates
+        src_pts = np.zeros((len(corners), 2))
+        dest_pts = np.zeros((len(corners), 2))
+        src_pts = corners[:, 0:2]
+        dest_pts = corners[:, 2:]
+
+        inliers_src_list = []  # list of inliers in source image
+        inliers_dest_list = []  # list of inliers in source image
+        for src_pt in range(len(src_pts)):
+            dest_pt_estimate = np.matmul(H, [src_pts[src_pt, 0], src_pts[src_pt, 1], 1])
+            dest_pt_estimate = dest_pt_estimate / dest_pt_estimate[-1]
+            diff = dest_pt_estimate[0:2] - dest_pts[src_pt, :]
+            err_dist_dest_pt = np.sqrt(np.sum(diff ** 2))
+            if err_dist_dest_pt < delta:
+                inliers_src_list.append(src_pts[src_pt, :])
+                inliers_dest_list.append(dest_pts[src_pt, :])
+                cv.circle(out_img, (int(src_pts[src_pt, 0]), int(src_pts[src_pt, 1])), 2, (255, 0, 0), 2)
+                cv.circle(out_img, (img1.shape[1] + int(dest_pts[src_pt, 0]), int(dest_pts[src_pt, 1])), 2,
+                           (255, 0, 0), 2)
+                cv.line(out_img, (int(src_pts[src_pt, 0]), int(src_pts[src_pt, 1])),
+                         (img1.shape[1] + int(dest_pts[src_pt, 0]), int(dest_pts[src_pt, 1])), (0, 255, 0))
+            else:
+                cv.circle(out_img, (int(src_pts[src_pt, 0]), int(src_pts[src_pt, 1])), 2, (0, 0, 255), 2)
+                cv.circle(out_img, (img1.shape[1] + int(dest_pts[src_pt, 0]), int(dest_pts[src_pt, 1])), 2,
+                           (0, 0, 255), 2)
+                cv.line(out_img, (int(src_pts[src_pt, 0]), int(src_pts[src_pt, 1])),
+                         (img1.shape[1] + int(dest_pts[src_pt, 0]), int(dest_pts[src_pt, 1])), (0, 0, 255))
+
+        cv.imwrite("serder.jpg", out_img)
+        #return out_img, np.array(inliers_src_list), np.array(inliers_dest_list)
+
+    def draw_correspondence_inlier_outlier(self, inlierlist,outlierlist):
+        """
+        This function draws the correspondence between the corner points in the pair of images. We denote each
+        corner point by a small circle around it. The correspondence is denoted by a line connecting the two points.
+        Before drawing the points, we first filter the correspondences based on a cutoff value so that we retain only
+        fairly accurate matches and not completely-off matches.
+        :param tags: Values to access and store values by key in the dictionaries
+        :param cutoffvalue: Value used to filter the list of matched corner points
+        :param style: Either filter values above the cutoff value or filter the values below it.
+        :return: Returns the resultant stitched image with the denoted correspondence lines.
+        """
+        resultImage = np.hstack((self.originalImages[0], self.originalImages[1]))
+        for element in inlierlist:
+            print(element)
+            p1x = int(element[1])
+            p1y = int(element[0])
+            p2x = int(element[1]) + 640
+            p2y = int(element[0])
+            cv.line(resultImage, (p1x,p1y), (p2x,p2y), [0, 255, 0], 1 )
+            # cv.circle(resultImage,(columnvalueone, rowvalueone), 2, [0, 0, 0], 2)
+            # cv.circle(resultImage, (columnvaluetwo, rowvaluetwo), 2, [0, 0, 0], 2)
+        cv.imwrite("sdfdsfsdf.jpg",resultImage)
 
     def update_dict_values(self,tags):
         tempdict = dict()
+        ip1=[]
+        ip2=[]
         matchedpoints = self.correspondence[tags[2]]
         (keypoint1, descriptor1) = self.cornerpointdict[tags[0]]
         (keypoint2, descriptor2) = self.cornerpointdict[tags[1]]
@@ -114,9 +263,14 @@ class Panorama:
             imagetwoindex = matchedpoint[0].trainIdx
             (x1, y1) = keypoint1[imageoneindex].pt
             (x2, y2) = keypoint2[imagetwoindex].pt
-            tempdict[(x1,y1)]=(x2,y2)
-        self.correspondence[tags[2]] = tempdict
-        print(self.correspondence[tags[2]])
+            # tempdict[(x1,y1)]=(x2,y2)
+            ip1.append((x1,y1))
+            ip2.append((x2,y2))
+        ip1=np.array(ip1)
+        ip2=np.array(ip2)
+        x = np.concatenate((ip1,ip2),axis=1)
+        self.correspondence[tags[2]] = x
+        # print(self.correspondence[tags[2]])
 
 
     def draw_correspondence(self, tags, cutoffvalue, style):
