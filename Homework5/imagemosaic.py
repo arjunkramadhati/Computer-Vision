@@ -39,6 +39,44 @@ class Panorama:
         self.ransactrials = int(math.ceil(math.log(1-pvalue)/math.log(1-math.pow(1-epsilonvalue,samplesize))))
         self.ransaccutoffsize = int(math.ceil((1-epsilonvalue)*correspondencedatasize))
 
+    def calculate_lls_homography(self,points):
+        homography = np.zeros((3,3))
+        a_matrix = np.zeros((len(list(points.keys()))))
+
+    def draw_correspondence(self, tags, cutoffvalue, style):
+        """
+        This function draws the correspondence between the corner points in the pair of images. We denote each
+        corner point by a small circle around it. The correspondence is denoted by a line connecting the two points.
+        Before drawing the points, we first filter the correspondences based on a cutoff value so that we retain only
+        fairly accurate matches and not completely-off matches.
+        :param tags: Values to access and store values by key in the dictionaries
+        :param cutoffvalue: Value used to filter the list of matched corner points
+        :param style: Either filter values above the cutoff value or filter the values below it.
+        :return: Returns the resultant stitched image with the denoted correspondence lines.
+        """
+        copydict = copy.deepcopy(self.correspondence[tags[0]])
+        print(copydict)
+        for (key,value) in self.correspondence[tags[0]].items():
+            if style == 'greaterthan':
+                if value[1]> cutoffvalue:
+                    copydict.pop(key)
+            elif style == 'lesserthan':
+                if value[1]< cutoffvalue:
+                    copydict.pop(key)
+        resultImage = np.hstack((self.originalImages[0], self.originalImages[1]))
+        horizontaloffset = 640
+        print(copydict)
+        for (key,value) in copydict.items():
+            # print((key,value))
+            columnvalueone = key[1]
+            rowvalueone = key[0]
+            columnvaluetwo = value[0][1] + horizontaloffset
+            rowvaluetwo = value[0][0]
+            cv.line(resultImage, (columnvalueone,rowvalueone), (columnvaluetwo,rowvaluetwo), [0, 255, 0], 1 )
+            cv.circle(resultImage,(columnvalueone, rowvalueone), 2, [0, 0, 0], 2)
+            cv.circle(resultImage, (columnvaluetwo, rowvaluetwo), 2, [0, 0, 0], 2)
+        return resultImage
+
     def sift_corner_detect(self, queueImage, tag):
         """
         This function detected and computes the sift keypoints and the descriptors. We use the generated keypoints
@@ -67,6 +105,7 @@ class Panorama:
         (keypoint2, descriptor2) = self.cornerpointdict[tags[1]]
         if method =='OpenCV':
             matchedpoints = cv.BFMatcher().knnMatch(descriptor1, descriptor2, k=2)
+            print(matchedpoints)
             filteredmatchedpoints = []
             for pointone, pointtwo in matchedpoints:
                 if pointone.distance < (pointtwo.distance * 0.75):
@@ -94,6 +133,9 @@ if __name__ =='__main__':
     for i in range(5):
         tester.sift_corner_detect(i, str(i))
     print("Detected SIFT interest points in 5 images.")
-    for i in range(0,4,2):
-        tester.sift_correpondence((i,i+1),(str(i),str(i+1)), 'OpenCV')
+    for i in range(0,5,1):
+        print(i)
+        tester.sift_correpondence((i,i+1),(str(i),str(i+1),str(i)+str(i+1)), 'Custom')
+        image = tester.draw_correspondence((str(i)+str(i+1),'value'),80,'lesserthan')
+        cv.imwrite(str(i)+str(i+1)+'.jpg', image)
 
