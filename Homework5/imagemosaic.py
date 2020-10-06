@@ -7,7 +7,7 @@ Date: September 28, 2020
 
 [TO RUN CODE]: python3 imagemosaic.py
 Output:
-    [jpg]: Panoramic image sticthed from 5 input images.
+    [jpg]: Panoramic image stitched from 5 input images.
 """
 
 import cv2 as cv
@@ -35,8 +35,8 @@ class Panorama:
         self.homographydict = {}
         self.kvalue = kvalue
         for i in range(len(self.image_addresses)):
-            self.originalImages.append(cv.resize(cv.imread(self.image_addresses[i]), (640, 480)))
-            self.grayscaleImages.append(cv.resize(cv.cvtColor(cv.imread(self.image_addresses[i]), cv.COLOR_BGR2GRAY), (640, 480)))
+            self.originalImages.append(cv.resize(cv.imread(self.image_addresses[i]), (320, 240)))
+            self.grayscaleImages.append(cv.resize(cv.cvtColor(cv.imread(self.image_addresses[i]), cv.COLOR_BGR2GRAY), (320, 240)))
         self.siftobject = cv.SIFT_create()
 
     def weightedPixelValue(self, rangecoordinates, objectQueue):
@@ -71,14 +71,23 @@ class Panorama:
                            weightAtFour + weightAtThree + weightAtTwo + weightAtOne)
 
     def get_panorama_done(self):
-        #correspondencedatasize = len(list(self.correspondence[tag].keys()))
+        """
+        This function calls the necessary functions to get the final panorama image output
+        :return: None
+        """
         self.calculate_ransac_parameters()
         for i in range(0,4,1):
             self.perform_ransac((str(i),str(i+1),str(i)+str(i+1)))
         self.get_product_homography()
-        self.get_panorama_image_size(('02','12','22','32','42'))
+        self.get_panorama_image(('02','12','22','32','42'))
 
-    def get_panorama_image_size(self,tags):
+    def get_panorama_image(self,tags):
+        """
+        This function first computes the size of the final panorama image. This it stitches the 5 images into
+        a panoramic image
+        :param tags: Tags for key values where the respective homography matrices are stored in the dictionary
+        :return: Stores the final image
+        """
         cornerlist = []
         for i in range(len(tags)):
             endpoints = np.zeros((3,4))
@@ -99,6 +108,7 @@ class Panorama:
             H = np.linalg.inv(self.homographydict[tags[i]])
             for column in range(0,pan_img.shape[0]):
                 for row in range(0,pan_img.shape[1]):
+                    print(str(column)+ " out of " + str(pan_img.shape[0]))
                     sourcecoord = np.array([row+minvalue[0], column+minvalue[1], 1])
                     destcoord = np.array(np.matmul(H,sourcecoord))
                     destcoord = destcoord/destcoord[-1]
@@ -108,6 +118,11 @@ class Panorama:
         cv.imwrite("panorama.jpg",pan_img)
 
     def get_product_homography(self):
+        """
+        Calculates the correct homography needed to get the final image. Since, we are taking the
+        3rd image as the center image, we need all the homographies with respect to the 3rd image.
+        :return: None. Stores the homographies in a dictionary
+        """
         H02 = np.matmul(self.homographydict['01'], self.homographydict['12'])
         H02 = H02/H02[-1,-1]
         self.homographydict['02']=H02
@@ -123,11 +138,53 @@ class Panorama:
         self.homographydict['22']=H22
 
     def calculate_ransac_parameters(self, pvalue=0.999,epsilonvalue=0.40,samplesize=6 ):
+        """
+        Calculates the ransac parameters.
+        :param pvalue: p value is taken as 99.9%
+        :param epsilonvalue: We assume 40% of the correspondences are outliers
+        :param samplesize: we take 6 random samples to calculate homography
+        :return: None.
+        """
         self.ransactrials = int((math.log(1-pvalue)/math.log(1-(1-epsilonvalue)**samplesize)))
         # self.ransaccutoffsize = int(math.ceil((1-epsilonvalue)*correspondencedatasize))
 
+    def refine_homography_objective_function(self, H, sourcpoints, destinationpoints):
+        """
+        Objective function for the scipy optimise least squares function.
+        :param H: Homography
+        :param sourcpoints: The points in the correspondences which are in the source image
+        :param destinationpoints: The points in the correspondences which are in the destination image
+        :return: error between the predicted and the actual point in the destination image
+        """
+        H = H.reshape(3, 3)
+        sourcpoints = np.concatenate((sourcpoints, np.ones((sourcpoints.shape[0], 1), np.float)), axis=1)
+        predictedpoints = np.matmul(H, sourcpoints.T).T
+        predictedpoints = predictedpoints // predictedpoints[:, 2].reshape(-1,1)
+        error = (predictedpoints[:, :2] - destinationpoints) ** 2
+        error = np.sqrt(np.sum(error, axis=1))
+
+        return error
+
+    def refine_homography(self, H, sourcepoints, destinationpoints):
+        """
+        Refines the homography using the scipy library
+        :param H: Homography
+        :param sourcpoints: The points in the correspondences which are in the source image
+        :param destinationpoints: The points in the correspondences which are in the destination image
+        :return: Refined homography matrix in 3X3 shape
+        """
+        refinedH = least_squares(self.refine_homography_objective_function, np.squeeze(H.reshape(-1, 1)), method='lm',
+                                               args=(sourcepoints, destinationpoints))
+        refinedH = refinedH.x.reshape(3, 3)
+        return refinedH
+
     def LinearLeastSquaresHomography(self,src_pts, dest_pts):
-        # Initialize Homography Matrix
+        """
+        Function to calculate the homography using linear least squares mehtod
+        :param src_pts: The points in the correspondences which are in the source image
+        :param dest_pts: The points in the correspondences which are in the destination image
+        :return: Homography matrix in 3X3 shape
+        """
         H = np.zeros((3, 3))
         # Setup the A Matrix
         A = np.zeros((len(src_pts) * 2, 9))
@@ -137,66 +194,30 @@ class Panorama:
             A[i * 2 + 1] = [src_pts[i, 0], src_pts[i, 1], 1, 0, 0, 0, -dest_pts[i, 0] * src_pts[i, 0],
                             -dest_pts[i, 0] * src_pts[i, 1], -dest_pts[i, 0]]
 
-        # print(A)
-        # print("done")
-        # Do SVD Decomposition
         U, D, V = np.linalg.svd(A)
-        V_T = np.transpose(V)  # Need to take transpose because rows of V are eigen vectors
-        H_elements = V_T[:, -1]  # Last column is the solution
-
-        # Fill the Homography Matrix
+        V_T = np.transpose(V)
+        H_elements = V_T[:, -1]
         H[0] = H_elements[0:3] / H_elements[-1]
         H[1] = H_elements[3:6] / H_elements[-1]
         H[2] = H_elements[6:9] / H_elements[-1]
-        # H = np.linalg.pinv(H)
-        # print(H)
-        # print("done")
+
         return H
-    # def calculate_lls_homography(self,points, samplesize=6):
-    #     homography = np.zeros((3,3))
-    #     amatrix = np.zeros((2*samplesize,9))
-    #     for index in range(samplesize):
-    #         amatrix[2*index] = [0,0,0,-points[i][0][0],-points[i][0][1],-1,points[i][1][1]*points[i][0][0],
-    #                             points[i][1][1]*points[i][0][1], points[i][1][1]]
-    #         amatrix[2*index +1] = [points[i][0][0],points[i][0][1],1,0,0,0,-points[i][1][0]*points[i][0][0],
-    #                                -points[i][1][0]*points[i][0][1],-points[i][1][0]]
-    #
-    #     # print(amatrix)
-    #     uvalue, dvalue, vvalue = np.linalg.svd(amatrix)
-    #     vvalueT = np.transpose(vvalue)
-    #     solution = vvalueT[:,-1]
-    #     homography[0] = solution[0:3]/solution[-1]
-    #     homography[1] = solution[3:6]/solution[-1]
-    #     homography[2] = solution[6:9]/solution[-1]
-    #     # homography =np.linalg.pinv(homography)
-    #     # homography =homography/homography[2][2]
-    #     # print(homography)
-    #     return homography
 
-    def perform_ransac(self,tags, samplesize=6, cutoff=3):
 
+    def perform_ransac(self,tags, samplesize=6, cutoff=3, refine =True):
+        """
+        Function to perform RANSAC to filter out inliers and outliers in the correspondences.
+        :param tags: String values for the keys in the dictionaries being used to retrieve relevant data
+        :param samplesize: 6 samples per trial
+        :param cutoff: cut off value to decide inlier vs outlier
+        :param refine: True if we need to refine homography, False if we do not need refinement
+        :return: We call the draw function to draw the inliers and the outliers.
+        """
         correspondence = self.correspondence[tags[2]]
-        # print(correspondence)
         src_xy = np.zeros((len(correspondence), 2))
         dest_xy = np.zeros((len(correspondence), 2))
         src_xy = correspondence[:, 0:2]
         dest_xy = correspondence[:, 2:]
-        sourcepoints = []
-        destinationpoints = []
-        # sx = np.asarray(list(correspondence.keys()))
-        # dx = np.asarray(list(correspondence.values()))
-
-        # for key,value in correspondence.items():
-        #     sourcepoints.append(key[0])
-        #     sourcepoints.append(key[1])
-        #     sourcepoints.append(1.0)
-        #     destinationpoints.append(value[0])
-        #     destinationpoints.append(value[1])
-        #     destinationpoints.append(1.0)
-        # sourcepoints = np.array(sourcepoints, dtype='float64')
-        # sourcepoints = sourcepoints.reshape(-1,3).T
-        # destinationpoints = np.array(destinationpoints, dtype='float64')
-        # destinationpoints = destinationpoints.reshape(-1,3).T
         count = 0
         listofinliersfinal =[]
         listofoutliersfinal = []
@@ -209,11 +230,7 @@ class Panorama:
             src_pts_trial = src_xy[ip_index, :]
             dest_pts_trial = dest_xy[ip_index, :]
 
-            # Calculate Homography by SVD for n selected correspondences
             H = self.LinearLeastSquaresHomography(src_pts_trial, dest_pts_trial)
-            # samples =random.sample(list(correspondence.items()),samplesize)
-            # print(len(samples))
-            # H = self.calculate_lls_homography(src_pts_trial, dest_pts_trial)
             dest_pts_estimate = np.zeros((dest_xy.shape), dtype='int')
 
             for src_pt in range(len(src_xy)):
@@ -234,7 +251,6 @@ class Panorama:
                 else:
                     outlierlist.append([src_xy[i][0], src_xy[i][1], dest_xy[i][0], dest_xy[i][1]])
 
-
             Inliers = [1 for val in dist if (val < 3)]
             if len(Inliers) > count:
                 count = len(Inliers)
@@ -242,30 +258,23 @@ class Panorama:
                 listofoutliersfinal =outlierlist
                 homographyfinal = H
 
-        self.homographydict[tags[2]]=homographyfinal
+        if refine == True:
+            self.homographydict[tags[2]] = self.refine_homography(homographyfinal, src_xy, dest_xy)
+        else:
+            self.homographydict[tags[2]]=homographyfinal
         print(len(listofinliersfinal))
         print(len(listofoutliersfinal))
-        #self.draw_correspondence_inlier_outlier(listofinliersfinal,listofoutliersfinal)
         self.displayImagewithInterestPointsandOutliers(tags,correspondence,homographyfinal,3)
 
-            # estimatehomography =np.linalg.pinv(estimatehomography)
-        #     estimatedpoints = np.matmul(estimatehomography,sourcepoints)
-        #     # print(estimatedpoints)
-        #     estimatedpoints = estimatedpoints/estimatedpoints[2,:]
-        #     squaredifference = (estimatedpoints - destinationpoints)**2
-        #     # print(squaredifference)
-        #     sumdifference =np.sum(squaredifference, axis=0)
-        #     # print(sumdifference)
-        #     validpointsidx = np.where(sumdifference <= cutoff**2)
-        #     print(validpointsidx)
-        #     listofinliersleft = [sx[i] for i in validpointsidx[0]]
-        #     if len(listofinliersleft) > count:
-        #         count = len(listofinliersleft)
-        #         listofinliersfinal = listofinliersleft
-        #         homographyfinal = estimatehomography
-        # print(listofinliersfinal)
-
     def displayImagewithInterestPointsandOutliers(self, tags, corners, H, delta):
+        """
+        We use this function to draw the inliers and the outliers on the image.
+        :param tags: Values for the keys in the relevant dictionary
+        :param corners:
+        :param H:
+        :param delta:
+        :return:
+        """
         # Get shape of the output image
         img1 = self.originalImages[int(tags[0])]
         img2 = self.originalImages[int(tags[1])]
@@ -336,6 +345,11 @@ class Panorama:
         cv.imwrite("sdfdsfsdf.jpg",resultImage)
 
     def update_dict_values(self,tags):
+        """
+        Convert the matched type variables into the form that we need
+        :param tags: Values for the keys in the dictionary
+        :return: Stores the values in a dictionary
+        """
         tempdict = dict()
         ip1=[]
         ip2=[]
@@ -354,7 +368,6 @@ class Panorama:
         ip2=np.array(ip2)
         x = np.concatenate((ip1,ip2),axis=1)
         self.correspondence[tags[2]] = x
-        # print(self.correspondence[tags[2]])
 
 
     def draw_correspondence(self, tags, cutoffvalue, style):
@@ -425,7 +438,7 @@ class Panorama:
                 if pointone.distance < (pointtwo.distance * 0.75):
                     filteredmatchedpoints.append([pointone])
             self.correspondence[tags[2]]=filteredmatchedpoints
-            result = cv.drawMatchesKnn(self.grayscaleImages[queueImages[0]], keypoint1, self.grayscaleImages[queueImages[1]],keypoint2, filteredmatchedpoints,None, flags=2)
+            result = cv.drawMatchesKnn(self.originalImages[queueImages[0]], keypoint1, self.originalImages[queueImages[1]],keypoint2, filteredmatchedpoints,None, flags=2)
             cv.imwrite("results/"+ str(tags[2]) + ".jpg", result)
         elif method =='Custom':
             tempdict = dict()
@@ -443,6 +456,10 @@ class Panorama:
             self.correspondence[tags[2]] = tempdict
 
 if __name__ =='__main__':
+
+    """
+    Code starts here
+    """
     tester = Panorama(['input_images/1.jpg','input_images/2.jpg', 'input_images/3.jpg', 'input_images/4.jpg',
                        'input_images/5.jpg'], 0.707)
     for i in range(5):
@@ -452,6 +469,5 @@ if __name__ =='__main__':
         print(i)
         tester.sift_correpondence((i,i+1),(str(i),str(i+1),str(i)+str(i+1)), 'OpenCV')
         tester.update_dict_values((str(i),str(i+1),str(i)+str(i+1)))
-        # image = tester.draw_correspondence((str(i)+str(i+1),'value'),650,'greaterthan')
-        # cv.imwrite(str(i)+str(i+1)+'.jpg', image)
+
     tester.get_panorama_done()

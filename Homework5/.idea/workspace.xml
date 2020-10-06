@@ -97,7 +97,7 @@
       <workItem from="1601767919356" duration="453000" />
       <workItem from="1601863434177" duration="1343000" />
       <workItem from="1601880034507" duration="11545000" />
-      <workItem from="1601923665137" duration="13308000" />
+      <workItem from="1601923665137" duration="18630000" />
     </task>
     <task id="LOCAL-00001" summary="Commit">
       <created>1601529365664</created>
@@ -162,7 +162,14 @@
       <option name="project" value="LOCAL" />
       <updated>1601935818653</updated>
     </task>
-    <option name="localTasksCounter" value="10" />
+    <task id="LOCAL-00010" summary="Commit">
+      <created>1601939550146</created>
+      <option name="number" value="00010" />
+      <option name="presentableId" value="LOCAL-00010" />
+      <option name="project" value="LOCAL" />
+      <updated>1601939550146</updated>
+    </task>
+    <option name="localTasksCounter" value="11" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -173,26 +180,26 @@
     <option name="LAST_COMMIT_MESSAGE" value="Commit" />
   </component>
   <component name="WindowStateProjectService">
-    <state x="259" y="25" key="CommitChangelistDialog2" timestamp="1601935818437">
+    <state x="259" y="25" key="CommitChangelistDialog2" timestamp="1601939550018">
       <screen x="0" y="0" width="1440" height="900" />
     </state>
-    <state x="259" y="25" key="CommitChangelistDialog2/0.0.1440.900@0.0.1440.900" timestamp="1601935818437" />
-    <state width="1398" height="245" key="GridCell.Tab.0.bottom" timestamp="1601939447856">
+    <state x="259" y="25" key="CommitChangelistDialog2/0.0.1440.900@0.0.1440.900" timestamp="1601939550018" />
+    <state width="1398" height="245" key="GridCell.Tab.0.bottom" timestamp="1601946546080">
       <screen x="0" y="0" width="1440" height="900" />
     </state>
-    <state width="1398" height="245" key="GridCell.Tab.0.bottom/0.0.1440.900@0.0.1440.900" timestamp="1601939447856" />
-    <state width="1398" height="245" key="GridCell.Tab.0.center" timestamp="1601939447854">
+    <state width="1398" height="245" key="GridCell.Tab.0.bottom/0.0.1440.900@0.0.1440.900" timestamp="1601946546080" />
+    <state width="1398" height="245" key="GridCell.Tab.0.center" timestamp="1601946546079">
       <screen x="0" y="0" width="1440" height="900" />
     </state>
-    <state width="1398" height="245" key="GridCell.Tab.0.center/0.0.1440.900@0.0.1440.900" timestamp="1601939447854" />
-    <state width="1398" height="245" key="GridCell.Tab.0.left" timestamp="1601939447853">
+    <state width="1398" height="245" key="GridCell.Tab.0.center/0.0.1440.900@0.0.1440.900" timestamp="1601946546079" />
+    <state width="1398" height="245" key="GridCell.Tab.0.left" timestamp="1601946546079">
       <screen x="0" y="0" width="1440" height="900" />
     </state>
-    <state width="1398" height="245" key="GridCell.Tab.0.left/0.0.1440.900@0.0.1440.900" timestamp="1601939447853" />
-    <state width="1398" height="245" key="GridCell.Tab.0.right" timestamp="1601939447855">
+    <state width="1398" height="245" key="GridCell.Tab.0.left/0.0.1440.900@0.0.1440.900" timestamp="1601946546079" />
+    <state width="1398" height="245" key="GridCell.Tab.0.right" timestamp="1601946546080">
       <screen x="0" y="0" width="1440" height="900" />
     </state>
-    <state width="1398" height="245" key="GridCell.Tab.0.right/0.0.1440.900@0.0.1440.900" timestamp="1601939447855" />
+    <state width="1398" height="245" key="GridCell.Tab.0.right/0.0.1440.900@0.0.1440.900" timestamp="1601946546080" />
     <state width="1398" height="304" key="GridCell.Tab.1.bottom" timestamp="1601622259241">
       <screen x="0" y="0" width="1440" height="900" />
     </state>
@@ -209,13 +216,13 @@
       <screen x="0" y="0" width="1440" height="900" />
     </state>
     <state width="1398" height="304" key="GridCell.Tab.1.right/0.0.1440.900@0.0.1440.900" timestamp="1601622259241" />
-    <state x="320" y="190" width="927" height="520" key="Vcs.Push.Dialog.v2" timestamp="1601935819805">
+    <state x="320" y="190" width="927" height="520" key="Vcs.Push.Dialog.v2" timestamp="1601939551183">
       <screen x="0" y="0" width="1440" height="900" />
     </state>
-    <state x="320" y="190" width="927" height="520" key="Vcs.Push.Dialog.v2/0.0.1440.900@0.0.1440.900" timestamp="1601935819805" />
+    <state x="320" y="190" width="927" height="520" key="Vcs.Push.Dialog.v2/0.0.1440.900@0.0.1440.900" timestamp="1601939551183" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
-    <SUITE FILE_PATH="coverage/Homework5$imagemosaic.coverage" NAME="imagemosaic Coverage Results" MODIFIED="1601939447844" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/Homework5$imagemosaic.coverage" NAME="imagemosaic Coverage Results" MODIFIED="1601946546073" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/Homework5$main.coverage" NAME="imagemosaic Coverage Results" MODIFIED="1601532610413" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
   </component>
 </project>
