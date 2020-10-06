@@ -269,10 +269,10 @@ class Panorama:
         """
         We use this function to draw the inliers and the outliers on the image.
         :param tags: Values for the keys in the relevant dictionary
-        :param correspondences:
-        :param homography:
-        :param cutoffvalue:
-        :return:
+        :param correspondences: matched points
+        :param homography: H matrix
+        :param cutoffvalue: decision value to decide inliers and outliers
+        :return: Writes the image with inliers and outliers
         """
         firstimage = self.originalImages[int(tags[0])]
         secondimage = self.originalImages[int(tags[1])]
