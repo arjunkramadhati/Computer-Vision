@@ -178,21 +178,21 @@ class Panorama:
         refinedH = refinedH.x.reshape(3, 3)
         return refinedH
 
-    def LinearLeastSquaresHomography(self,src_pts, dest_pts):
+    def calculate_lls_homography(self, image1points, image2points):
         """
         Function to calculate the homography using linear least squares mehtod
-        :param src_pts: The points in the correspondences which are in the source image
-        :param dest_pts: The points in the correspondences which are in the destination image
+        :param image1points: The points in the correspondences which are in the source image
+        :param image2points: The points in the correspondences which are in the destination image
         :return: Homography matrix in 3X3 shape
         """
         H = np.zeros((3, 3))
         # Setup the A Matrix
-        A = np.zeros((len(src_pts) * 2, 9))
-        for i in range(len(src_pts)):
-            A[i * 2] = [0, 0, 0, -src_pts[i, 0], -src_pts[i, 1], -1, dest_pts[i, 1] * src_pts[i, 0],
-                        dest_pts[i, 1] * src_pts[i, 1], dest_pts[i, 1]]
-            A[i * 2 + 1] = [src_pts[i, 0], src_pts[i, 1], 1, 0, 0, 0, -dest_pts[i, 0] * src_pts[i, 0],
-                            -dest_pts[i, 0] * src_pts[i, 1], -dest_pts[i, 0]]
+        A = np.zeros((len(image1points) * 2, 9))
+        for i in range(len(image1points)):
+            A[i * 2] = [0, 0, 0, -image1points[i, 0], -image1points[i, 1], -1, image2points[i, 1] * image1points[i, 0],
+                        image2points[i, 1] * image1points[i, 1], image2points[i, 1]]
+            A[i * 2 + 1] = [image1points[i, 0], image1points[i, 1], 1, 0, 0, 0, -image2points[i, 0] * image1points[i, 0],
+                            -image2points[i, 0] * image1points[i, 1], -image2points[i, 0]]
 
         U, D, V = np.linalg.svd(A)
         V_T = np.transpose(V)
@@ -214,10 +214,10 @@ class Panorama:
         :return: We call the draw function to draw the inliers and the outliers.
         """
         correspondence = self.correspondence[tags[2]]
-        src_xy = np.zeros((len(correspondence), 2))
-        dest_xy = np.zeros((len(correspondence), 2))
-        src_xy = correspondence[:, 0:2]
-        dest_xy = correspondence[:, 2:]
+        image1points = np.zeros((len(correspondence), 2))
+        image2points = np.zeros((len(correspondence), 2))
+        image1points = correspondence[:, 0:2]
+        image2points = correspondence[:, 2:]
         count = 0
         listofinliersfinal =[]
         listofoutliersfinal = []
@@ -225,31 +225,29 @@ class Panorama:
 
         for iteration in range(self.ransactrials):
             print(str(iteration) + " of " + str(self.ransactrials))
-            print(len(src_xy))
-            ip_index = np.random.randint(0, len(src_xy), samplesize)
-            src_pts_trial = src_xy[ip_index, :]
-            dest_pts_trial = dest_xy[ip_index, :]
+            print(len(image1points))
+            ip_index = np.random.randint(0, len(image1points), samplesize)
+            image1sample = image1points[ip_index, :]
+            image2sample = image2points[ip_index, :]
+            H = self.calculate_lls_homography(image1sample, image2sample)
+            dest_pts_estimate = np.zeros((image2points.shape), dtype='int')
+            for index in range(len(image1points)):
+                dest_pts_nonNorm = np.matmul(H, ([image1points[index, 0], image1points[index, 1], 1]))
+                dest_pts_estimate[index, 0] = dest_pts_nonNorm[0] / dest_pts_nonNorm[-1]
+                dest_pts_estimate[index, 1] = dest_pts_nonNorm[1] / dest_pts_nonNorm[-1]
 
-            H = self.LinearLeastSquaresHomography(src_pts_trial, dest_pts_trial)
-            dest_pts_estimate = np.zeros((dest_xy.shape), dtype='int')
-
-            for src_pt in range(len(src_xy)):
-                dest_pts_nonNorm = np.matmul(H, ([src_xy[src_pt, 0], src_xy[src_pt, 1], 1]))
-                dest_pts_estimate[src_pt, 0] = dest_pts_nonNorm[0] / dest_pts_nonNorm[-1]
-                dest_pts_estimate[src_pt, 1] = dest_pts_nonNorm[1] / dest_pts_nonNorm[-1]
-
-            dest_pts_estimate_err = dest_pts_estimate - dest_xy
-            dest_pts_estimate_err_sq = np.square(dest_pts_estimate_err)
-            dist = np.sqrt(dest_pts_estimate_err_sq[:, 0] + dest_pts_estimate_err_sq[:, 1])
+            estimationerror = dest_pts_estimate - image2points
+            errorsqaure = np.square(estimationerror)
+            dist = np.sqrt(errorsqaure[:, 0] + errorsqaure[:, 1])
             validpointidx = np.where(dist <= cutoff)
             invalidpointidx = np.where(dist > cutoff)
             innlierlist=[]
             outlierlist =[]
             for i,element in enumerate(dist):
                 if element <=cutoff:
-                    innlierlist.append([src_xy[i][1],src_xy[i][0],dest_pts_estimate[i][1],dest_pts_estimate[i][0] ])
+                    innlierlist.append([image1points[i][1],image1points[i][0],dest_pts_estimate[i][1],dest_pts_estimate[i][0] ])
                 else:
-                    outlierlist.append([src_xy[i][0], src_xy[i][1], dest_xy[i][0], dest_xy[i][1]])
+                    outlierlist.append([image1points[i][0], image1points[i][1], image2points[i][0], image2points[i][1]])
 
             Inliers = [1 for val in dist if (val < 3)]
             if len(Inliers) > count:
@@ -259,67 +257,55 @@ class Panorama:
                 homographyfinal = H
 
         if refine == True:
-            self.homographydict[tags[2]] = self.refine_homography(homographyfinal, src_xy, dest_xy)
+            print("Refining...")
+            self.homographydict[tags[2]] = self.refine_homography(homographyfinal, image1points, image2points)
         else:
             self.homographydict[tags[2]]=homographyfinal
         print(len(listofinliersfinal))
         print(len(listofoutliersfinal))
-        self.displayImagewithInterestPointsandOutliers(tags,correspondence,homographyfinal,3)
+        self.draw_inliers_outliers(tags, correspondence, homographyfinal, 3)
 
-    def displayImagewithInterestPointsandOutliers(self, tags, corners, H, delta):
+    def draw_inliers_outliers(self, tags, correspondences, homography, cutoffvalue):
         """
         We use this function to draw the inliers and the outliers on the image.
         :param tags: Values for the keys in the relevant dictionary
-        :param corners:
-        :param H:
-        :param delta:
+        :param correspondences:
+        :param homography:
+        :param cutoffvalue:
         :return:
         """
-        # Get shape of the output image
-        img1 = self.originalImages[int(tags[0])]
-        img2 = self.originalImages[int(tags[1])]
-        nrows = max(img1.shape[0], img2.shape[0])
-        ncol = img1.shape[1] + img2.shape[1]
-
-        # Initialize combined output image
-        out_img = np.zeros((nrows, ncol, 3))
-
-        # Copy Image 1 to left half of the output image
-        out_img[:img1.shape[0], :img1.shape[1]] = img1
-
-        # Copy Image 2 to right half of the output image
-        out_img[:img2.shape[0], img1.shape[1]:img1.shape[1] + img2.shape[1]] = img2
-
-        # Seperate source and destination images XY coordinates
-        src_pts = np.zeros((len(corners), 2))
-        dest_pts = np.zeros((len(corners), 2))
-        src_pts = corners[:, 0:2]
-        dest_pts = corners[:, 2:]
-
-        inliers_src_list = []  # list of inliers in source image
-        inliers_dest_list = []  # list of inliers in source image
-        for src_pt in range(len(src_pts)):
-            dest_pt_estimate = np.matmul(H, [src_pts[src_pt, 0], src_pts[src_pt, 1], 1])
-            dest_pt_estimate = dest_pt_estimate / dest_pt_estimate[-1]
-            diff = dest_pt_estimate[0:2] - dest_pts[src_pt, :]
-            err_dist_dest_pt = np.sqrt(np.sum(diff ** 2))
-            if err_dist_dest_pt < delta:
-                inliers_src_list.append(src_pts[src_pt, :])
-                inliers_dest_list.append(dest_pts[src_pt, :])
-                cv.circle(out_img, (int(src_pts[src_pt, 0]), int(src_pts[src_pt, 1])), 2, (255, 0, 0), 2)
-                cv.circle(out_img, (img1.shape[1] + int(dest_pts[src_pt, 0]), int(dest_pts[src_pt, 1])), 2,
+        firstimage = self.originalImages[int(tags[0])]
+        secondimage = self.originalImages[int(tags[1])]
+        nrows = max(firstimage.shape[0], secondimage.shape[0])
+        ncol = firstimage.shape[1] + secondimage.shape[1]
+        resultimage = np.zeros((nrows, ncol, 3))
+        resultimage[:firstimage.shape[0], :firstimage.shape[1]] = firstimage
+        resultimage[:secondimage.shape[0], firstimage.shape[1]:firstimage.shape[1] + secondimage.shape[1]] = secondimage
+        image1points = correspondences[:, 0:2]
+        image2points = correspondences[:, 2:]
+        inliersimage1 = []
+        inliersimage2 = []
+        for src_pt in range(len(image1points)):
+            estimate = np.matmul(homography, [image1points[src_pt, 0], image1points[src_pt, 1], 1])
+            estimate = estimate / estimate[-1]
+            diff = estimate[0:2] - image2points[src_pt, :]
+            errorinestimation = np.sqrt(np.sum(diff ** 2))
+            if errorinestimation < cutoffvalue:
+                inliersimage1.append(image1points[src_pt, :])
+                inliersimage2.append(image2points[src_pt, :])
+                cv.circle(resultimage, (int(image1points[src_pt, 0]), int(image1points[src_pt, 1])), 2, (255, 0, 0), 2)
+                cv.circle(resultimage, (firstimage.shape[1] + int(image2points[src_pt, 0]), int(image2points[src_pt, 1])), 2,
                            (255, 0, 0), 2)
-                cv.line(out_img, (int(src_pts[src_pt, 0]), int(src_pts[src_pt, 1])),
-                         (img1.shape[1] + int(dest_pts[src_pt, 0]), int(dest_pts[src_pt, 1])), (0, 255, 0))
+                cv.line(resultimage, (int(image1points[src_pt, 0]), int(image1points[src_pt, 1])),
+                         (firstimage.shape[1] + int(image2points[src_pt, 0]), int(image2points[src_pt, 1])), (0, 255, 0))
             else:
-                cv.circle(out_img, (int(src_pts[src_pt, 0]), int(src_pts[src_pt, 1])), 2, (0, 0, 255), 2)
-                cv.circle(out_img, (img1.shape[1] + int(dest_pts[src_pt, 0]), int(dest_pts[src_pt, 1])), 2,
+                cv.circle(resultimage, (int(image1points[src_pt, 0]), int(image1points[src_pt, 1])), 2, (0, 0, 255), 2)
+                cv.circle(resultimage, (firstimage.shape[1] + int(image2points[src_pt, 0]), int(image2points[src_pt, 1])), 2,
                            (0, 0, 255), 2)
-                cv.line(out_img, (int(src_pts[src_pt, 0]), int(src_pts[src_pt, 1])),
-                         (img1.shape[1] + int(dest_pts[src_pt, 0]), int(dest_pts[src_pt, 1])), (0, 0, 255))
+                cv.line(resultimage, (int(image1points[src_pt, 0]), int(image1points[src_pt, 1])),
+                         (firstimage.shape[1] + int(image2points[src_pt, 0]), int(image2points[src_pt, 1])), (0, 0, 255))
 
-        cv.imwrite("results/"+str(tags[2])+"inlieroutlier.jpg", out_img)
-        #return out_img, np.array(inliers_src_list), np.array(inliers_dest_list)
+        cv.imwrite("results/"+str(tags[2])+"inlieroutlier.jpg", resultimage)
 
     def draw_correspondence_inlier_outlier(self, inlierlist,outlierlist):
         """
