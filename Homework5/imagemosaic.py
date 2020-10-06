@@ -2,7 +2,7 @@
 Computer Vision - Purdue University - Homework 5
 
 Author : Arjun Kramadhati Gopi, MS-Computer & Information Technology, Purdue University.
-Date: September 28, 2020
+Date: Oct 5, 2020
 
 
 [TO RUN CODE]: python3 imagemosaic.py

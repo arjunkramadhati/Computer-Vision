@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="0338ec73-3643-43ca-b2ce-caa45401dfe8" name="Default Changelist" comment="Commit">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+    <list default="true" id="0338ec73-3643-43ca-b2ce-caa45401dfe8" name="Default Changelist" comment="">
       <change beforePath="$PROJECT_DIR$/imagemosaic.py" beforeDir="false" afterPath="$PROJECT_DIR$/imagemosaic.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -97,7 +96,7 @@
       <workItem from="1601767919356" duration="453000" />
       <workItem from="1601863434177" duration="1343000" />
       <workItem from="1601880034507" duration="11545000" />
-      <workItem from="1601923665137" duration="22417000" />
+      <workItem from="1601923665137" duration="22489000" />
     </task>
     <task id="LOCAL-00001" summary="Commit">
       <created>1601529365664</created>
@@ -190,7 +189,14 @@
       <option name="project" value="LOCAL" />
       <updated>1601950701650</updated>
     </task>
-    <option name="localTasksCounter" value="14" />
+    <task id="LOCAL-00014" summary="Commit">
+      <created>1601950767845</created>
+      <option name="number" value="00014" />
+      <option name="presentableId" value="LOCAL-00014" />
+      <option name="project" value="LOCAL" />
+      <updated>1601950767845</updated>
+    </task>
+    <option name="localTasksCounter" value="15" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -201,10 +207,10 @@
     <option name="LAST_COMMIT_MESSAGE" value="Commit" />
   </component>
   <component name="WindowStateProjectService">
-    <state x="259" y="25" key="CommitChangelistDialog2" timestamp="1601950759844">
+    <state x="259" y="25" key="CommitChangelistDialog2" timestamp="1601950767735">
       <screen x="0" y="0" width="1440" height="900" />
     </state>
-    <state x="259" y="25" key="CommitChangelistDialog2/0.0.1440.900@0.0.1440.900" timestamp="1601950759844" />
+    <state x="259" y="25" key="CommitChangelistDialog2/0.0.1440.900@0.0.1440.900" timestamp="1601950767735" />
     <state width="1398" height="245" key="GridCell.Tab.0.bottom" timestamp="1601949842746">
       <screen x="0" y="0" width="1440" height="900" />
     </state>
@@ -237,10 +243,10 @@
       <screen x="0" y="0" width="1440" height="900" />
     </state>
     <state width="1398" height="304" key="GridCell.Tab.1.right/0.0.1440.900@0.0.1440.900" timestamp="1601622259241" />
-    <state x="320" y="190" width="927" height="520" key="Vcs.Push.Dialog.v2" timestamp="1601950702431">
+    <state x="320" y="190" width="927" height="520" key="Vcs.Push.Dialog.v2" timestamp="1601950768704">
       <screen x="0" y="0" width="1440" height="900" />
     </state>
-    <state x="320" y="190" width="927" height="520" key="Vcs.Push.Dialog.v2/0.0.1440.900@0.0.1440.900" timestamp="1601950702431" />
+    <state x="320" y="190" width="927" height="520" key="Vcs.Push.Dialog.v2/0.0.1440.900@0.0.1440.900" timestamp="1601950768704" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/Homework5$imagemosaic.coverage" NAME="imagemosaic Coverage Results" MODIFIED="1601949169146" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
