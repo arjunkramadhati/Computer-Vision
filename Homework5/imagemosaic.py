@@ -400,8 +400,6 @@ class Panorama:
         """
         keypoint, descriptor = self.siftobject.detectAndCompute(self.grayscaleImages[queueImage], None)
         self.cornerpointdict[tag] = (keypoint, descriptor)
-        #img = cv.drawKeypoints(self.grayscaleImages[queueImage], keypoint, copy.deepcopy(self.originalImages[queueImage]), flags=cv.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
-        #cv.imwrite(tag + '.jpg', img)
 
     def sift_correpondence(self, queueImages, tags, method):
         """
@@ -418,7 +416,6 @@ class Panorama:
         (keypoint2, descriptor2) = self.cornerpointdict[tags[1]]
         if method =='OpenCV':
             matchedpoints = cv.BFMatcher().knnMatch(descriptor1, descriptor2, k=2)
-            #print(matchedpoints)
             filteredmatchedpoints = []
             for pointone, pointtwo in matchedpoints:
                 if pointone.distance < (pointtwo.distance * 0.75):
@@ -431,7 +428,6 @@ class Panorama:
             for index,element in enumerate(descriptor1):
                 list = []
                 list2 = []
-
                 for index2, element2 in enumerate(descriptor2):
                     euclediandistance = np.sqrt(np.sum(np.square((element-element2))))
                     list.append(euclediandistance)
