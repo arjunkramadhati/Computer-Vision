@@ -1,13 +1,13 @@
 """
-Computer Vision - Purdue University - Homework 5
+Computer Vision - Purdue University - Homework 6
 
 Author : Arjun Kramadhati Gopi, MS-Computer & Information Technology, Purdue University.
 Date: Oct 5, 2020
 
 
-[TO RUN CODE]: python3 imagemosaic.py
+[TO RUN CODE]: python3 segmentimages.py
 Output:
-    [jpg]: Panoramic image stitched from 5 input images.
+    [jpg]: Segmented image which shows the foreground separated from the background.
 """
 
 import cv2 as cv
