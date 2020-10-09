@@ -21,3 +21,18 @@ import copy
 import threading
 from scipy.optimize import least_squares
 from scipy.optimize import minimize
+
+class ImageSegmentation:
+    def __init__(self, image_addresses):
+        self.image_addresses = image_addresses
+        self.originalImages = []
+        self.grayscaleImages = []
+        self.filters = {}
+        self.cornerpointdict = {}
+        self.slidingwindowdict = {}
+        self.correspondence = {}
+        self.homographydict = {}
+        for i in range(len(self.image_addresses)):
+            self.originalImages.append(cv.resize(cv.imread(self.image_addresses[i]), (640, 480)))
+            self.grayscaleImages.append(
+                cv.resize(cv.cvtColor(cv.imread(self.image_addresses[i]), cv.COLOR_BGR2GRAY), (640, 480)))
