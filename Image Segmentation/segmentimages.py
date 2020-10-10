@@ -85,15 +85,27 @@ class ImageSegmentation:
             #                                         resultimage[:, :, 2]) * 255, np.uint8)
             templist.append(resultimage)
             resultimage = resultimage[:,:,index]*255
-            cv.imwrite(channel + '.jpg', resultimage)
+            cv.imwrite(str(imagequeue)+channel + '.jpg', resultimage)
         combinedimage = np.array(np.logical_and(np.logical_and(templist[0][:, :, 0], templist[1][:, :, 1]),
                                                     templist[2][:, :, 2]) * 255, np.uint8)
         cv.imwrite(str(imagequeue)+'combined.jpg', combinedimage)
         resultimage = self.filter_masks(combinedimage)
+        self.draw_foreground_save(resultimage, imagequeue)
         self.draw_contour_save(self.extract_contour(resultimage), imagequeue)
+
+    def draw_foreground_save(self, image, imagequeue):
+        r, g, b = self.rgbchannelsdict[imagequeue]['R'], self.rgbchannelsdict[imagequeue]['G'], self.rgbchannelsdict[imagequeue]['B']
+        r,g,b = copy.deepcopy(r),copy.deepcopy(g),copy.deepcopy(b)
+        truthplot = np.logical_and(np.logical_not(image),1)
+        b[truthplot] = 0
+        g[truthplot] = 0
+        r[truthplot] = 0
+        resultimage = cv.merge([b, g, r])
+        cv.imwrite(str(imagequeue) + 'foreground.jpg', resultimage)
 
     def draw_contour_save(self, contours, imagequeue):
         r,g,b = self.rgbchannelsdict[imagequeue]['R'],self.rgbchannelsdict[imagequeue]['G'],self.rgbchannelsdict[imagequeue]['B']
+        r, g, b = copy.deepcopy(r), copy.deepcopy(g), copy.deepcopy(b)
         truthplot = np.logical_and(contours,1)
         b[truthplot] = 0
         g[truthplot] = 255
@@ -114,9 +126,8 @@ class ImageSegmentation:
         return contourplot
 
 
-
-
 if __name__ == '__main__':
     tester = ImageSegmentation(['hw6_images/cat.jpg','hw6_images/pigeon.jpg','hw6_images/Red-Fox_.jpg'])
     tester.split_channels()
-    tester.run_otsu(0)
+    for i in range(3):
+        tester.run_otsu(i)
