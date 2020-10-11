@@ -42,6 +42,9 @@ class ImageSegmentation:
                 r, g, b = self.originalImages[queue][:, :, 0], self.originalImages[queue][:, :, 1], self.originalImages[queue][:, :, 2]
             if gaussianblur:
                 r,g,b = cv.GaussianBlur(r, (5,5), 0), cv.GaussianBlur(g, (5,5), 0), cv.GaussianBlur(b, (5,5), 0)
+            cv.imwrite(str(queue)+'Rchanneloriginal.jpg',r)
+            cv.imwrite(str(queue) + 'Gchanneloriginal.jpg', g)
+            cv.imwrite(str(queue) + 'Bchanneloriginal.jpg', b)
             self.rgbchannelsdict[queue]={'R': r, 'G': g, 'B': b}
 
     def filter_masks(self, image):
@@ -49,6 +52,29 @@ class ImageSegmentation:
         filteredimage = filteredimage > 240
         filteredimage = np.array(filteredimage*255, np.uint8)
         return filteredimage
+
+    def otsu_algorithm(self, image, imagequeue, index, method):
+        channelhistogram = cv.calcHist([np.uint8(image)], [0], None, [256], [0, 256])
+        levels = np.reshape(np.add(range(256), 1), (256, 1))
+        maxlambda = -1
+        otsucutoff = -1
+        plt.hist(image.ravel(), 256, [0, 256])
+        plt.savefig('histograms/' + str(imagequeue) + str(index) + method)
+        plt.show()
+        for i in range(len(channelhistogram)):
+            m0k = np.sum(channelhistogram[:i]) / np.sum(channelhistogram)
+            m1k = np.sum(np.multiply(channelhistogram[:i], levels[:i])) / np.sum(channelhistogram)
+            m11k = np.sum(np.multiply(channelhistogram[i:], levels[i:])) / np.sum(channelhistogram)
+            omega0 = m0k
+            omega1 = 1 - m0k
+            mu0 = m1k / omega0
+            mu1 = m11k / omega1
+            sqauredifference = np.square(mu1 - mu0)
+            lambdavalue = omega0 * omega1 * sqauredifference
+            if lambdavalue > maxlambda:
+                maxlambda = lambdavalue
+                otsucutoff = i
+        return otsucutoff
 
     def run_otsu_texture(self, imagequeue):
         templist = []
@@ -63,25 +89,7 @@ class ImageSegmentation:
                     textureimg[row, column] = np.mean((slidingwindow - np.mean(slidingwindow))**2)
             textureimgfinal[:,:,index] = np.uint8(textureimg/textureimg.max()*255)
             image = textureimgfinal[:, :, index]
-            channelhistogram = cv.calcHist([np.uint8(image)],[0], None, [256], [0, 256])
-            levels = np.reshape(np.add(range(256) , 1) , (256, 1))
-            maxlambda = -1
-            otsucutoff = -1
-            plt.hist(image.ravel(), 256, [0, 256]);
-            plt.show()
-            for i in range(len(channelhistogram)):
-                m0k = np.sum(channelhistogram[:i])/np.sum(channelhistogram)
-                m1k = np.sum(np.multiply(channelhistogram[:i],levels[:i]))/np.sum(channelhistogram)
-                m11k = np.sum(np.multiply(channelhistogram[i:],levels[i:]))/np.sum(channelhistogram)
-                omega0 = m0k
-                omega1 = 1 - m0k
-                mu0 = m1k/omega0
-                mu1 = m11k/omega1
-                sqauredifference = np.square(mu1-mu0)
-                lambdavalue = omega0*omega1*sqauredifference
-                if lambdavalue > maxlambda:
-                    maxlambda = lambdavalue
-                    otsucutoff = i
+            otsucutoff = self.otsu_algorithm(image, imagequeue, index, 'texture')
             resultimage = np.zeros(self.originalImages[imagequeue].shape)
             print(otsucutoff)
             resultimage[:,:, index] = image <= otsucutoff
@@ -90,37 +98,16 @@ class ImageSegmentation:
             cv.imwrite(str(imagequeue)+str(window)+ '.jpg', resultimage)
         combinedimage = np.array(np.logical_and(np.logical_and(templist[0][:, :, 0], templist[1][:, :, 1]),
                                                     templist[2][:, :, 2]) * 255, np.uint8)
-        cv.imwrite(str(imagequeue)+'combined.jpg', combinedimage)
+        cv.imwrite(str(imagequeue)+'combinedTexturebased.jpg', combinedimage)
         resultimage = self.filter_masks(combinedimage)
         self.draw_foreground_save(resultimage, imagequeue, 'texturemethod')
         self.draw_contour_save(self.extract_contour(resultimage), imagequeue, 'texturemethod')
-
-
 
     def run_otsu_rgb(self, imagequeue):
         templist = []
         for index, channel in enumerate(['R','G','B']):
             image = self.rgbchannelsdict[imagequeue][channel]
-            channelhistogram = cv.calcHist([np.uint8(image)],[0], None, [256], [0, 256])
-            levels = np.reshape(np.add(range(256) , 1) , (256, 1))
-            maxlambda = -1
-            otsucutoff = -1
-            # plt.hist(image.ravel(), 256, [0, 256]);
-            # plt.show()
-
-            for i in range(len(channelhistogram)):
-                m0k = np.sum(channelhistogram[:i])/np.sum(channelhistogram)
-                m1k = np.sum(np.multiply(channelhistogram[:i],levels[:i]))/np.sum(channelhistogram)
-                m11k = np.sum(np.multiply(channelhistogram[i:],levels[i:]))/np.sum(channelhistogram)
-                omega0 = m0k
-                omega1 = 1 - m0k
-                mu0 = m1k/omega0
-                mu1 = m11k/omega1
-                sqauredifference = np.square(mu1-mu0)
-                lambdavalue = omega0*omega1*sqauredifference
-                if lambdavalue > maxlambda:
-                    maxlambda = lambdavalue
-                    otsucutoff = i
+            otsucutoff = self.otsu_algorithm(image, imagequeue, index, 'rgb')
             resultimage = np.zeros(self.originalImages[imagequeue].shape)
             print(otsucutoff)
             resultimage[:,:, index] = image <= otsucutoff
@@ -129,7 +116,7 @@ class ImageSegmentation:
             cv.imwrite(str(imagequeue)+channel + '.jpg', resultimage)
         combinedimage = np.array(np.logical_and(np.logical_and(templist[0][:, :, 0], templist[1][:, :, 1]),
                                                     templist[2][:, :, 2]) * 255, np.uint8)
-        cv.imwrite(str(imagequeue)+'combined.jpg', combinedimage)
+        cv.imwrite(str(imagequeue)+'combinedRGBbased.jpg', combinedimage)
         resultimage = self.filter_masks(combinedimage)
         self.draw_foreground_save(resultimage, imagequeue, 'rgbmethod')
         self.draw_contour_save(self.extract_contour(resultimage), imagequeue, 'rgbmethod')
@@ -171,5 +158,5 @@ if __name__ == '__main__':
     tester = ImageSegmentation(['hw6_images/cat.jpg','hw6_images/pigeon.jpg','hw6_images/Red-Fox_.jpg'])
     tester.split_channels()
     for i in range(3):
-        # tester.run_otsu_rgb(i)
+        tester.run_otsu_rgb(i)
         tester.run_otsu_texture(i)
