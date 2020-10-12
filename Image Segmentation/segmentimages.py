@@ -53,32 +53,46 @@ class ImageSegmentation:
         filteredimage = np.array(filteredimage*255, np.uint8)
         return filteredimage
 
-    def otsu_algorithm(self, image, imagequeue, index, method):
-        channelhistogram = cv.calcHist([np.uint8(image)], [0], None, [256], [0, 256])
-        levels = np.reshape(np.add(range(256), 1), (256, 1))
-        maxlambda = -1
-        otsucutoff = -1
-        plt.hist(image.ravel(), 256, [0, 256])
-        plt.savefig('histograms/' + str(imagequeue) + str(index) + method)
-        plt.show()
-        for i in range(len(channelhistogram)):
-            m0k = np.sum(channelhistogram[:i]) / np.sum(channelhistogram)
-            m1k = np.sum(np.multiply(channelhistogram[:i], levels[:i])) / np.sum(channelhistogram)
-            m11k = np.sum(np.multiply(channelhistogram[i:], levels[i:])) / np.sum(channelhistogram)
-            omega0 = m0k
-            omega1 = 1 - m0k
-            mu0 = m1k / omega0
-            mu1 = m11k / omega1
-            sqauredifference = np.square(mu1 - mu0)
-            lambdavalue = omega0 * omega1 * sqauredifference
-            if lambdavalue > maxlambda:
-                maxlambda = lambdavalue
-                otsucutoff = i
+    def otsu_algorithm(self, image, imagequeue, index, method, iterations):
+        otsucutoff = 0
+        otsucutoffinitial = 0
+        templist = []
+        for iteration in range(iterations):
+
+            start = otsucutoff + otsucutoffinitial
+            otsucutoffinitial = otsucutoff
+            end = 256
+            diff = end - start
+            channelhistogram = cv.calcHist([np.uint8(image)], [0], None, [diff], [start, end])
+            levels = np.reshape(np.add(range(diff), 1), (diff, 1))
+            maxlambda = -1
+            otsucutoff = -1
+            plt.hist(image.ravel(), diff, [start, end])
+            # plt.savefig('histograms/' + str(imagequeue) + str(index) + method)
+            plt.show()
+            for i in range(len(channelhistogram)):
+                m0k = np.sum(channelhistogram[:i]) / np.sum(channelhistogram)
+                m1k = np.sum(np.multiply(channelhistogram[:i], levels[:i])) / np.sum(channelhistogram)
+                m11k = np.sum(np.multiply(channelhistogram[i:], levels[i:])) / np.sum(channelhistogram)
+                omega0 = m0k
+                omega1 = 1 - m0k
+                mu0 = m1k / omega0
+                mu1 = m11k / omega1
+                sqauredifference = np.square(mu1 - mu0)
+                lambdavalue = omega0 * omega1 * sqauredifference
+                if lambdavalue > maxlambda:
+                    maxlambda = lambdavalue
+                    otsucutoff = i
+            templist.append(otsucutoff)
+            print(otsucutoff)
+        otsucutoff = np.sum(templist)
+        print(otsucutoff)
         return otsucutoff
 
-    def run_otsu_texture(self, imagequeue):
+    def run_otsu_texture(self, imagequeue, iterations):
         templist = []
         greyimage = self.grayscaleImages[imagequeue]
+
         for index, window in enumerate([3,5,7]):
             textureimgfinal = np.zeros((self.originalImages[imagequeue].shape))
             textureimg = np.zeros((self.grayscaleImages[imagequeue].shape))
@@ -86,10 +100,13 @@ class ImageSegmentation:
             for row in range(windowsize, greyimage.shape[0]-windowsize):
                 for column in range(windowsize, greyimage.shape[1] - windowsize):
                     slidingwindow = greyimage[row-windowsize:row+windowsize+1, column-windowsize:column+windowsize+1]
-                    textureimg[row, column] = np.mean((slidingwindow - np.mean(slidingwindow))**2)
-            textureimgfinal[:,:,index] = np.uint8(textureimg/textureimg.max()*255)
+                    slidingwindow = slidingwindow - np.mean(slidingwindow)
+                    textureimg[row, column] = np.var(slidingwindow)
+                    # textureimg[row, column] = np.mean((slidingwindow - np.mean(slidingwindow))**2)
+            #textureimgfinal[:,:,index] = np.uint8(textureimg/textureimg.max()*255)
+            textureimgfinal[:, :, index] = textureimg*255
             image = textureimgfinal[:, :, index]
-            otsucutoff = self.otsu_algorithm(image, imagequeue, index, 'texture')
+            otsucutoff = self.otsu_algorithm(image, imagequeue, index, 'texture', iterations)
             resultimage = np.zeros(self.originalImages[imagequeue].shape)
             print(otsucutoff)
             resultimage[:,:, index] = image <= otsucutoff
@@ -103,13 +120,12 @@ class ImageSegmentation:
         self.draw_foreground_save(resultimage, imagequeue, 'texturemethod')
         self.draw_contour_save(self.extract_contour(resultimage), imagequeue, 'texturemethod')
 
-    def run_otsu_rgb(self, imagequeue):
+    def run_otsu_rgb(self, imagequeue, iterations):
         templist = []
         for index, channel in enumerate(['R','G','B']):
             image = self.rgbchannelsdict[imagequeue][channel]
-            otsucutoff = self.otsu_algorithm(image, imagequeue, index, 'rgb')
+            otsucutoff = self.otsu_algorithm(image, imagequeue, index, 'rgb', iterations)
             resultimage = np.zeros(self.originalImages[imagequeue].shape)
-            print(otsucutoff)
             resultimage[:,:, index] = image <= otsucutoff
             templist.append(resultimage)
             resultimage = resultimage[:,:,index]*255
@@ -157,6 +173,9 @@ class ImageSegmentation:
 if __name__ == '__main__':
     tester = ImageSegmentation(['hw6_images/cat.jpg','hw6_images/pigeon.jpg','hw6_images/Red-Fox_.jpg'])
     tester.split_channels()
-    for i in range(3):
-        tester.run_otsu_rgb(i)
-        tester.run_otsu_texture(i)
+    iterations_rgb = [1,3,2]
+    iterations_texture = [4,1,1]
+    for i in range(len(iterations_rgb)):
+        tester.run_otsu_rgb(i, iterations_rgb[i])
+    # for i in range(1,2):
+    #     tester.run_otsu_texture(i, iterations_texture[i])
