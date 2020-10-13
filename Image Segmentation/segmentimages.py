@@ -57,13 +57,14 @@ class ImageSegmentation:
         otsucutoff = 0
         otsucutoffinitial = 0
         templist = []
+        mask = None
         for iteration in range(iterations):
 
-            start = otsucutoff + otsucutoffinitial
-            otsucutoffinitial = otsucutoff
+            start = 0
+            # otsucutoffinitial = otsucutoff
             end = 256
             diff = end - start
-            channelhistogram = cv.calcHist([np.uint8(image)], [0], None, [diff], [start, end])
+            channelhistogram = cv.calcHist([np.uint8(image)], [0], mask, [diff], [start, end])
             levels = np.reshape(np.add(range(diff), 1), (diff, 1))
             maxlambda = -1
             otsucutoff = -1
@@ -83,17 +84,20 @@ class ImageSegmentation:
                 if lambdavalue > maxlambda:
                     maxlambda = lambdavalue
                     otsucutoff = i
-            templist.append(otsucutoff)
+            mask = np.zeros(image.shape[:2], np.uint8)
+            mask[:,:] = image >= otsucutoff
+            mask = mask[:,:]*255
+            # templist.append(otsucutoff)
             print(otsucutoff)
-        otsucutoff = np.sum(templist)
-        print(otsucutoff)
+        # otsucutoff = np.sum(templist)
+        # print(otsucutoff)
         return otsucutoff
 
-    def run_otsu_texture(self, imagequeue, iterations):
+    def run_otsu_texture(self, imagequeue, iterations, windows):
         templist = []
         greyimage = self.grayscaleImages[imagequeue]
 
-        for index, window in enumerate([3,5,7]):
+        for index, window in enumerate(windows):
             textureimgfinal = np.zeros((self.originalImages[imagequeue].shape))
             textureimg = np.zeros((self.grayscaleImages[imagequeue].shape))
             windowsize = np.uint8((window-1)/2)
@@ -103,8 +107,8 @@ class ImageSegmentation:
                     slidingwindow = slidingwindow - np.mean(slidingwindow)
                     textureimg[row, column] = np.var(slidingwindow)
                     # textureimg[row, column] = np.mean((slidingwindow - np.mean(slidingwindow))**2)
-            #textureimgfinal[:,:,index] = np.uint8(textureimg/textureimg.max()*255)
-            textureimgfinal[:, :, index] = textureimg*255
+            textureimgfinal[:,:,index] = np.uint8(textureimg/textureimg.max()*255)
+            # textureimgfinal[:, :, index] = textureimg*255
             image = textureimgfinal[:, :, index]
             otsucutoff = self.otsu_algorithm(image, imagequeue, index, 'texture', iterations)
             resultimage = np.zeros(self.originalImages[imagequeue].shape)
@@ -157,25 +161,29 @@ class ImageSegmentation:
         resultimage = cv.merge([b,g,r])
         cv.imwrite(str(imagequeue)+method+'contourplot.jpg', resultimage)
 
-    def extract_contour(self, image):
-        print(image.shape)
+    def extract_contour(self, image, style = 1):
         contourplot = np.zeros((image.shape[0],image.shape[1]))
         for row in range(1, image.shape[0]-1):
             for column in range(1, image.shape[1]-1):
                 # print(str(column) + " out of " + str(image.shape[0]))
                 if image[row,column] == 0:
-                    window = image[row-1:row+2, column-1:column+2]
-                    if 255 in window:
-                        contourplot[row, column] = 255
+                    if style == 1:
+                        window = image[row-1:row+2, column-1:column+2]
+                        if 255 in window:
+                            contourplot[row, column] = 255
+                    elif style ==2:
+                        if(image[row+1, column] == 255 or image[row - 1,column] == 255 or image[row, column+1] == 0 or image[row, column-1] == 0):
+                            contourplot[row, column] = 255
         return contourplot
 
 
 if __name__ == '__main__':
     tester = ImageSegmentation(['hw6_images/cat.jpg','hw6_images/pigeon.jpg','hw6_images/Red-Fox_.jpg'])
     tester.split_channels()
-    iterations_rgb = [1,3,2]
-    iterations_texture = [4,1,1]
+    iterations_rgb = [1,2,2]
+    iterations_texture = [1,1,1]
+    windows=[19,21,22]
     for i in range(len(iterations_rgb)):
         tester.run_otsu_rgb(i, iterations_rgb[i])
-    # for i in range(1,2):
-    #     tester.run_otsu_texture(i, iterations_texture[i])
+    for i in range(len(iterations_texture)):
+        tester.run_otsu_texture(i, iterations_texture[i], windows)
