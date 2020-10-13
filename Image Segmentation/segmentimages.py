@@ -15,6 +15,7 @@ from matplotlib import pyplot as plt
 import numpy as np
 import copy
 
+
 class ImageSegmentation:
     def __init__(self, image_addresses):
         self.image_addresses = image_addresses
