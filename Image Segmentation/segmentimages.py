@@ -12,16 +12,8 @@ Output:
 
 import cv2 as cv
 from matplotlib import pyplot as plt
-import math
 import numpy as np
-import random
-import time
-from scipy import signal as sg
-import tqdm
 import copy
-import threading
-from scipy.optimize import least_squares
-from scipy.optimize import minimize
 
 class ImageSegmentation:
     def __init__(self, image_addresses):
