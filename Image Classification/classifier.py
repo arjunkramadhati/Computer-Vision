@@ -23,15 +23,21 @@ from collections import Counter
 
 class Imageclassifier:
 
-    def __init__(self, training_directory, testing_directory, parameterR, parameterP, kvalue):
+    def __init__(self, training_directory, testing_directory, parameterR, parameterP, kvalue, Train=False):
         self.classdict = dict()
         self.imagedict = dict()
         self.histogramdict = dict()
+        self.database = []
+        self.cmatrix = np.zeros((5, 5), dtype='int')
+        if not Train:
+            training_directory = testing_directory
         self.classcount = len(os.listdir(training_directory))
         for element in os.listdir(training_directory):
             self.classdict[element] = len(os.listdir(training_directory+'/'+element))
             templist = []
             for image in sorted(os.listdir(training_directory+'/'+element)):
+                print(os.listdir(training_directory+'/'+element))
+                print(image)
                 origimage = cv.imread(training_directory+'/'+element+'/'+image)
                 imageread = np.zeros((origimage.shape[0], origimage.shape[1], origimage.shape[2]), dtype='uint8')
                 image_gray = np.zeros((origimage.shape[0], origimage.shape[1]), dtype='uint8')
@@ -78,7 +84,7 @@ class Imageclassifier:
             histogram[len(runs[1])] += 1
         return histogram
 
-    def generate_texture_feature(self, queuetuple):
+    def generate_texture_feature(self, queuetuple, Train = False):
         """
         This function implements the building of the Local Binary Pattern histogram for the give image
         :param queuetuple: Location of the image in the dictionary
@@ -106,15 +112,157 @@ class Imageclassifier:
                 minimum_bit_vector = BitVector.BitVector(intVal=min(intvals_for_circular_shifts), size=self.parameterP)
                 runs = minimum_bit_vector.runs()
                 histogram = self.build_histogram(histogram, runs)
-        self.histogramdict[queuetuple] = histogram
-        plt.bar(list(histogram.keys()), histogram.values(), color='b')
-        path = 'histograms/' + str(queuetuple[0]) + '/'
-        plt.savefig(path + 'Class_{}'.format(queuetuple[0]) + '_ImageNum_{}'.format(int(queuetuple[1])) + '.png')
+        if Train:
+            self.histogramdict[queuetuple] = histogram
+            plt.bar(list(histogram.keys()), histogram.values(), color='b')
+            path = 'histograms/' + str(queuetuple[0]) + '/'
+            plt.savefig(path + 'Class_{}'.format(queuetuple[0]) + '_ImageNum_{}'.format(int(queuetuple[1])) + '.png')
+        if not Train:
+            return histogram
+
+
+    def save_histograms_of_all(self, filename):
+        file = open(filename,'wb')
+        pickle.dump(self.histogramdict, file)
+        file.close()
+
+    def load_data(self, filename):
+        blist =[]
+        bblist =[]
+        clist =[]
+        mlist =[]
+        tlist =[]
+        beachlist =np.zeros((20,10))
+        buildinglist =np.zeros((20,10))
+        carlist =np.zeros((20,10))
+        mountainlist =np.zeros((20,10))
+        treelist=np.zeros((20,10))
+        print(self.classdict['tree'])
+        file = open(filename, 'rb')
+        database = pickle.load(file)
+        file.close()
+        for element,index in database:
+            if element[0] =='beach':
+                blist.append(database.get(element))
+            if element[0] =='building':
+                bblist.append(database.get(element))
+            if element[0] =='mountain':
+                mlist.append(database.get(element))
+            if element[0] =='car':
+                clist.append(database.get(element))
+            if element[0] =='tree':
+                tlist.append(database.get(element))
+
+        for index in range(len(blist)):
+            beachlist[index, :] = np.array(list(blist[index].values()))
+        for index in range(len(bblist)):
+            buildinglist[index, :] = np.array(list(bblist[index].values()))
+        for index in range(len(clist)):
+            carlist[index, :] = np.array(list(clist[index].values()))
+        for index in range(len(mlist)):
+            mountainlist[index, :] = np.array(list(mlist[index].values()))
+        for index in range(len(tlist)):
+            treelist[index, :] = np.array(list(tlist[index].values()))
+
+        histogram_all = np.zeros((100, 11))
+        for i in range(5):
+            index1 = 20 * i
+            index2 = index1 + 20
+            histogram_all[index1:index2, 0] = i
+        histogram_all[:, 1:] = np.concatenate((beachlist, buildinglist, carlist, mountainlist, treelist), axis=0)
+        self.database = histogram_all
+        print('loaded data successfully')
+
+
+
+    def knn_classify(self, lbp_hist_test_obj, nImgs = 5, nTrainImgs =20, nClass=5):
+        k = self.kneighbors
+        lbp_hist_train = self.database
+        lbp_hist_test = np.zeros((nImgs, 10))
+        for i in range(len(lbp_hist_test_obj)):  # Image number in test set
+            lbp_hist_test[i, :] = np.array(list(lbp_hist_test_obj[i].values()))
+
+        euclid_dt = np.zeros((nImgs, lbp_hist_train.shape[0]))
+        test_img_labels = np.zeros((nImgs, k), dtype='int')
+        label = np.zeros(nImgs, dtype='int')
+        for i in range(nImgs):  # Number of images in test set
+            for j in range(lbp_hist_train.shape[0]):  # Total images in training set
+                euclid_dt[i, j] = np.linalg.norm(lbp_hist_test[i, :] - lbp_hist_train[j, 1:])
+            euclid_dt_sort_idx = np.argsort(euclid_dt[i, :])
+            euclid_dt_sort = np.sort(euclid_dt[i, :])
+            # print(euclid_dt[i,:])
+            # print(euclid_dt_sort_idx)
+
+            for k_idx in range(k):
+                if (euclid_dt_sort_idx[k_idx] < (nTrainImgs * 1)):
+                    test_img_labels[i, k_idx] = 0
+                elif (euclid_dt_sort_idx[k_idx] < (nTrainImgs * 2)):
+                    test_img_labels[i, k_idx] = 1
+                elif (euclid_dt_sort_idx[k_idx] < (nTrainImgs * 3)):
+                    test_img_labels[i, k_idx] = 2
+                elif (euclid_dt_sort_idx[k_idx] < (nTrainImgs * 4)):
+                    test_img_labels[i, k_idx] = 3
+                elif (euclid_dt_sort_idx[k_idx] < (nTrainImgs * 5)):
+                    test_img_labels[i, k_idx] = 4
+
+            # print(test_img_labels[i,:])
+            # Get label with maximum appearence
+            label[i], freq = Counter(list(test_img_labels[i, :])).most_common(1)[0]
+            # print(label[i])
+            # print(freq)
+
+        return label
+
+    def predict_and_analyse(self,blist,bblist,mlist,clist,tlist):
+
+        label_index = self.knn_classify(blist)
+        label_unique, label_unique_count = np.unique(label_index, return_counts=True)
+        self.cmatrix['beach', label_unique] = label_unique_count
+        label_index = self.knn_classify(bblist)
+        label_unique, label_unique_count = np.unique(label_index, return_counts=True)
+        self.cmatrix['building', label_unique] = label_unique_count
+        label_index = self.knn_classify(mlist)
+        label_unique, label_unique_count = np.unique(label_index, return_counts=True)
+        self.cmatrix['mountain', label_unique] = label_unique_count
+        label_index = self.knn_classify(clist)
+        label_unique, label_unique_count = np.unique(label_index, return_counts=True)
+        self.cmatrix['car', label_unique] = label_unique_count
+        label_index = self.knn_classify(tlist)
+        label_unique, label_unique_count = np.unique(label_index, return_counts=True)
+        self.cmatrix['tree', label_unique] = label_unique_count
+        print(self.cmatrix)
 
 
 if __name__ == "__main__":
-    tester = Imageclassifier("imagesDatabaseHW7/training", "ImageDatabaseHW7/testing", 1, 8, 5)
-    for element in os.listdir("imagesDatabaseHW7/training"):
-        for index in range(len(os.listdir("imagesDatabaseHW7/training" + '/' + element))):
-            print('training image class: '+element+' __ ' + str(index))
-            tester.generate_texture_feature((element, index))
+    tester = Imageclassifier("imagesDatabaseHW7/training", "imagesDatabaseHW7/testing", 1, 8, 5)
+    Train = False
+    if Train:
+        for element in os.listdir("imagesDatabaseHW7/training"):
+            for index in range(len(os.listdir("imagesDatabaseHW7/training" + '/' + element))):
+                print('training image class: '+element+' __ ' + str(index))
+                tester.generate_texture_feature((element, index))
+        print('Training complete. Saving histogram dictionary...')
+        tester.save_histograms_of_all('histograms.obj')
+        print('Saving complete')
+    tester.load_data('histograms.obj')
+    btestlist =[]
+    bbtestlist =[]
+    mtestlist = []
+    ctestlist = []
+    ttestlist = []
+    testdict = dict()
+    for element in os.listdir("imagesDatabaseHW7/testing"):
+        for index in range(len(os.listdir("imagesDatabaseHW7/testing" + '/' + element))):
+            print('testing image class: ' + element + ' __ ' + str(index))
+            hist = tester.generate_texture_feature((element,index))
+            if element == 'beach':
+                btestlist.append(hist)
+            if element == 'building':
+                bbtestlist.append(hist)
+            if element == 'mountain':
+                mtestlist.append(hist)
+            if element == 'car':
+                ctestlist.append(hist)
+            if element == 'tree':
+                ttestlist.append(hist)
+    tester.predict_and_analyse(btestlist,bbtestlist,mtestlist,ctestlist,ttestlist)
