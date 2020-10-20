@@ -201,35 +201,34 @@ class Imageclassifier:
         :return: returns the index of the label of the classes
         """
         knnparameter = self.kneighbors
-        training_histogra_all = self.database
+        training_histogram_all = self.database
         result_hist = np.zeros((numberoftestingimages, 10))
         condition1 = numberoftrainingimages * 1
         condition2 = numberoftrainingimages * 2
         condition3 = numberoftrainingimages * 3
         condition4 = numberoftrainingimages * 4
         condition5 = numberoftrainingimages * 5
-
-        for i in range(len(list_histograms_class)):
-            result_hist[i, :] = np.array(list(list_histograms_class[i].values()))
-        eucledian_distance = np.zeros((numberoftestingimages, training_histogra_all.shape[0]))
-        label_list = np.zeros((numberoftestingimages, knnparameter), dtype='int')
-        labelindex = np.zeros(numberoftestingimages, dtype='int')
-        for i in range(numberoftestingimages):
-            for j in range(training_histogra_all.shape[0]):
-                eucledian_distance[i, j] = np.linalg.norm(result_hist[i, :] - training_histogra_all[j, 1:])
-            sorted_distance = np.argsort(eucledian_distance[i, :])
+        for index_class in range(len(list_histograms_class)):
+            label_list = np.zeros((numberoftestingimages, knnparameter), dtype='int')
+            labelindex = np.zeros(numberoftestingimages, dtype='int')
+            result_hist[index_class, :] = np.array(list(list_histograms_class[index_class].values()))
+        eucledian_distance = np.zeros((numberoftestingimages, training_histogram_all.shape[0]))
+        for imageindex in range(numberoftestingimages):
+            for imagetrain in range(training_histogram_all.shape[0]):
+                eucledian_distance[imageindex, imagetrain] = np.linalg.norm(result_hist[imageindex, :] - training_histogram_all[imagetrain, 1:])
+            sorted_distance = np.argsort(eucledian_distance[imageindex, :])
             for k_idx in range(knnparameter):
-                if (sorted_distance[k_idx] < (condition1)):
-                    label_list[i, k_idx] = 0
-                elif (sorted_distance[k_idx] < (condition2)):
-                    label_list[i, k_idx] = 1
-                elif (sorted_distance[k_idx] < (condition3)):
-                    label_list[i, k_idx] = 2
-                elif (sorted_distance[k_idx] < (condition4)):
-                    label_list[i, k_idx] = 3
-                elif (sorted_distance[k_idx] < (condition5)):
-                    label_list[i, k_idx] = 4
-            labelindex[i], freq = Counter(list(label_list[i, :])).most_common(1)[0]
+                if (sorted_distance[k_idx] <= (condition1)):
+                    label_list[imageindex, k_idx] = 0
+                elif (sorted_distance[k_idx] <= (condition2)):
+                    label_list[imageindex, k_idx] = 1
+                elif (sorted_distance[k_idx] <= (condition3)):
+                    label_list[imageindex, k_idx] = 2
+                elif (sorted_distance[k_idx] <= (condition4)):
+                    label_list[imageindex, k_idx] = 3
+                elif (sorted_distance[k_idx] <= (condition5)):
+                    label_list[imageindex, k_idx] = 4
+            labelindex[imageindex], freq = Counter(list(label_list[imageindex, :])).most_common(1)[0]
         return labelindex
 
     def predict_and_analyse(self,blist,bblist,mlist,clist,tlist):
