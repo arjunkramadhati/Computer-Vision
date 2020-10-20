@@ -13,17 +13,25 @@ Output:
 import cv2 as cv
 from matplotlib import pyplot as plt
 import numpy as np
-import copy
 import math
-import glob
 import BitVector
 import pickle
 import os
 from collections import Counter
 
+
 class Imageclassifier:
 
     def __init__(self, training_directory, testing_directory, parameterR, parameterP, kvalue, Train=False):
+        """
+        Initialise the image classifier object used to either train or test the classification of images
+        :param training_directory: Directory of the training set
+        :param testing_directory: Directory of the testing set
+        :param parameterR: Radius for the circular boundary
+        :param parameterP: Number of points on the circular boundary
+        :param kvalue:k nearest neighbors needed for match
+        :param Train: Training yes or no
+        """
         self.classdict = dict()
         self.imagedict = dict()
         self.histogramdict = dict()
@@ -62,11 +70,11 @@ class Imageclassifier:
         :return: greylevel at the point pß
         """
         image = self.imagedict[queuetuple[0]][queuetuple[1]]
-        if (delu < 0.001) and (delv < 0.001):
+        if (delu < 0.01) and (delv < 0.01):
             interpolated_greylevel = float(image[centerX][centerY])
-        elif (delv < 0.001):
+        elif (delv < 0.01):
             interpolated_greylevel = (1 - delu) * image[centerX][centerY] + delu * image[centerX + 1][centerY]
-        elif (delu < 0.001):
+        elif (delu < 0.01):
             interpolated_greylevel = (1 - delv) * image[centerX][centerY] + delv * image[centerX][centerY + 1]
         else:
             interpolated_greylevel = (1 - delu) * (1 - delv) * image[centerX][centerY] + (1 - delu) * delv * image[centerX][centerY + 1] + delu * delv * \
@@ -106,7 +114,6 @@ class Imageclassifier:
                         binarypatternforpoint.append(1)
                     else:
                         binarypatternforpoint.append(0)
-
                 bitvector = BitVector.BitVector(bitlist=binarypatternforpoint)
                 intvals_for_circular_shifts = [int(bitvector << 1) for _ in range(self.parameterP)]
                 minimum_bit_vector = BitVector.BitVector(intVal=min(intvals_for_circular_shifts), size=self.parameterP)
@@ -120,13 +127,23 @@ class Imageclassifier:
         if not Train:
             return histogram
 
-
     def save_histograms_of_all(self, filename):
+        """
+        Saves the Local Binary Pattern histograms of every image
+        :param filename: File name for the data base
+        :return: None
+        """
         file = open(filename,'wb')
         pickle.dump(self.histogramdict, file)
         file.close()
 
     def load_data(self, filename):
+        """
+        Loads the database from the saved .obj file. The database contains
+        the LBP histograms of very image in training set
+        :param filename: File name of the database being retrieved.
+        :return: Load and store the database in a dictionary
+        """
         blist =[]
         bblist =[]
         clist =[]
@@ -173,67 +190,85 @@ class Imageclassifier:
         self.database = histogram_all
         print('loaded data successfully')
 
+    def knn_classify(self, list_histograms_class, numberoftestingimages = 5, numberoftrainingimages =20):
+        """
+        This function implements the knnparameter-Nearest Neighbor algorithm. We use the Eucledian distance to
+        calculate the nearest matches.
+        :param list_histograms_class: List of all the LBP histograms of a particular class
+        :param numberoftestingimages: Number of images in the testing set
+        :param numberoftrainingimages: Number of images in the training set
+        :param nClass: Number of classes to predict
+        :return: returns the index of the label of the classes
+        """
+        knnparameter = self.kneighbors
+        training_histogra_all = self.database
+        result_hist = np.zeros((numberoftestingimages, 10))
+        condition1 = numberoftrainingimages * 1
+        condition2 = numberoftrainingimages * 2
+        condition3 = numberoftrainingimages * 3
+        condition4 = numberoftrainingimages * 4
+        condition5 = numberoftrainingimages * 5
 
-
-    def knn_classify(self, lbp_hist_test_obj, nImgs = 5, nTrainImgs =20, nClass=5):
-        k = self.kneighbors
-        lbp_hist_train = self.database
-        lbp_hist_test = np.zeros((nImgs, 10))
-        for i in range(len(lbp_hist_test_obj)):  # Image number in test set
-            lbp_hist_test[i, :] = np.array(list(lbp_hist_test_obj[i].values()))
-
-        euclid_dt = np.zeros((nImgs, lbp_hist_train.shape[0]))
-        test_img_labels = np.zeros((nImgs, k), dtype='int')
-        label = np.zeros(nImgs, dtype='int')
-        for i in range(nImgs):  # Number of images in test set
-            for j in range(lbp_hist_train.shape[0]):  # Total images in training set
-                euclid_dt[i, j] = np.linalg.norm(lbp_hist_test[i, :] - lbp_hist_train[j, 1:])
-            euclid_dt_sort_idx = np.argsort(euclid_dt[i, :])
-            euclid_dt_sort = np.sort(euclid_dt[i, :])
-            # print(euclid_dt[i,:])
-            # print(euclid_dt_sort_idx)
-
-            for k_idx in range(k):
-                if (euclid_dt_sort_idx[k_idx] < (nTrainImgs * 1)):
-                    test_img_labels[i, k_idx] = 0
-                elif (euclid_dt_sort_idx[k_idx] < (nTrainImgs * 2)):
-                    test_img_labels[i, k_idx] = 1
-                elif (euclid_dt_sort_idx[k_idx] < (nTrainImgs * 3)):
-                    test_img_labels[i, k_idx] = 2
-                elif (euclid_dt_sort_idx[k_idx] < (nTrainImgs * 4)):
-                    test_img_labels[i, k_idx] = 3
-                elif (euclid_dt_sort_idx[k_idx] < (nTrainImgs * 5)):
-                    test_img_labels[i, k_idx] = 4
-
-            # print(test_img_labels[i,:])
-            # Get label with maximum appearence
-            label[i], freq = Counter(list(test_img_labels[i, :])).most_common(1)[0]
-            # print(label[i])
-            # print(freq)
-
-        return label
+        for i in range(len(list_histograms_class)):
+            result_hist[i, :] = np.array(list(list_histograms_class[i].values()))
+        eucledian_distance = np.zeros((numberoftestingimages, training_histogra_all.shape[0]))
+        label_list = np.zeros((numberoftestingimages, knnparameter), dtype='int')
+        labelindex = np.zeros(numberoftestingimages, dtype='int')
+        for i in range(numberoftestingimages):
+            for j in range(training_histogra_all.shape[0]):
+                eucledian_distance[i, j] = np.linalg.norm(result_hist[i, :] - training_histogra_all[j, 1:])
+            sorted_distance = np.argsort(eucledian_distance[i, :])
+            for k_idx in range(knnparameter):
+                if (sorted_distance[k_idx] < (condition1)):
+                    label_list[i, k_idx] = 0
+                elif (sorted_distance[k_idx] < (condition2)):
+                    label_list[i, k_idx] = 1
+                elif (sorted_distance[k_idx] < (condition3)):
+                    label_list[i, k_idx] = 2
+                elif (sorted_distance[k_idx] < (condition4)):
+                    label_list[i, k_idx] = 3
+                elif (sorted_distance[k_idx] < (condition5)):
+                    label_list[i, k_idx] = 4
+            labelindex[i], freq = Counter(list(label_list[i, :])).most_common(1)[0]
+        return labelindex
 
     def predict_and_analyse(self,blist,bblist,mlist,clist,tlist):
+        """
+        This function takes the histograms of the testing set and uses them to
+        predict the class labels for each of the images in the testing set. The results are
+        collated in a confusion matrix
+        :param blist: List of histograms for beach class
+        :param bblist: List of histograms for building class
+        :param mlist: List of histograms for mountain class
+        :param clist: List of histograms for the car class
+        :param tlist: List of histograms for the tree class
+        :return: Prints the final confusion matrix.
+        """
 
         label_index = self.knn_classify(blist)
         label_unique, label_unique_count = np.unique(label_index, return_counts=True)
-        self.cmatrix['beach', label_unique] = label_unique_count
+        self.cmatrix[0, label_unique] = label_unique_count
         label_index = self.knn_classify(bblist)
         label_unique, label_unique_count = np.unique(label_index, return_counts=True)
-        self.cmatrix['building', label_unique] = label_unique_count
+        self.cmatrix[1, label_unique] = label_unique_count
         label_index = self.knn_classify(mlist)
         label_unique, label_unique_count = np.unique(label_index, return_counts=True)
-        self.cmatrix['mountain', label_unique] = label_unique_count
+        self.cmatrix[2, label_unique] = label_unique_count
         label_index = self.knn_classify(clist)
         label_unique, label_unique_count = np.unique(label_index, return_counts=True)
-        self.cmatrix['car', label_unique] = label_unique_count
+        self.cmatrix[3, label_unique] = label_unique_count
         label_index = self.knn_classify(tlist)
         label_unique, label_unique_count = np.unique(label_index, return_counts=True)
-        self.cmatrix['tree', label_unique] = label_unique_count
+        self.cmatrix[4, label_unique] = label_unique_count
+        print('Prediction complete')
+        print('Printing confusion matrix...')
         print(self.cmatrix)
 
 
 if __name__ == "__main__":
+    """
+    Code begins here
+    """
     tester = Imageclassifier("imagesDatabaseHW7/training", "imagesDatabaseHW7/testing", 1, 8, 5)
     Train = False
     if Train:
@@ -266,3 +301,4 @@ if __name__ == "__main__":
             if element == 'tree':
                 ttestlist.append(hist)
     tester.predict_and_analyse(btestlist,bbtestlist,mtestlist,ctestlist,ttestlist)
+
