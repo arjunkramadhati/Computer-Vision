@@ -31,6 +31,7 @@ class Calibrate:
         self.gray_images_dict = dict()
         self.lines_dict = dict()
         self.corner_size = (8,10)
+        self.corner_list = []
         for index, element in enumerate(tqdm(self.image_path)):
             image = cv.imread(element)
             self.color_images_dict[index] = image
@@ -68,31 +69,57 @@ class Calibrate:
         print("Line extraction complete...")
         print("-------------------------------------")
 
-    def filter_list(self, hlist, vlist, distance_cutoff = 15):
-        sorted_hlist = sorted(hlist, key=lambda hline:hline[0][0]*np.sin(hline[0][1]),reverse=False)
-        sorted_vlist = sorted(vlist, key= lambda vline:vline[0][0]*np.cos(vline[0][1]), reverse=False)
+    def filter_lines(self, houghlines):
+        final_hough_list = np.asarray(houghlines).copy()
+        final_hlist_hesse = []
+        final_vlist_hesse = []
+        for index in range(len(final_hough_list)):
+            individual_final_list = np.array(final_hough_list[index]).tolist()
+            individual_final_list_h = individual_final_list[0:10]
+            individual_final_list_h.sort(key=lambda item:item[0][0])
+            final_hlist_hesse.append(individual_final_list_h)
+            individual_final_list_v = individual_final_list[10:]
+            individual_final_list_v.sort(key=lambda item:abs(item[0][0]))
+            final_vlist_hesse.append(individual_final_list_v)
+        return final_hlist_hesse, final_vlist_hesse
+
+    def filter_list(self, hlist, vlist, distance_cutoffH = 100,distance_cutoffV = 100):
         filtered_hlist = []
         filtered_vlist = []
-        for index in range(len(sorted_hlist)):
-            rho = sorted_hlist[index][0]
-            theta = sorted_hlist[index][1]
-            if index == 0:
-                filtered_hlist.append(sorted_hlist[index])
-            elif abs(rho * np.sin(theta) - filtered_hlist[-1][0] * np.sin(filtered_hlist[-1][1])) > distance_cutoff:
-                filtered_hlist.append(sorted_hlist[index])
-        for index in range(len(sorted_vlist)):
-            rho = sorted_vlist[index][0]
-            theta = sorted_vlist[index][1]
-            if index == 0:
-                filtered_vlist.append(sorted_vlist[index])
-            elif abs(rho * np.sin(theta) - filtered_vlist[-1:][0] * np.sin(filtered_vlist[-1:][1])) > distance_cutoff:
-                filtered_vlist.append(sorted_vlist[index])
+        while(len(filtered_hlist)<10):
+            distance_cutoffH -=0.05
+            filtered_hlist = []
+            for index in range(len(hlist)):
+                selectedline = hlist[index][0][0]
+                reject = 0
+                for line in filtered_hlist:
+                    if abs(abs(line[0][0])- abs(selectedline))<distance_cutoffH:
+                        reject = 1
+                if reject ==0:
+                    filtered_hlist.append(hlist[index])
 
-        return filtered_hlist,filtered_vlist
+        while(len(filtered_vlist)<8):
+            distance_cutoffV -=0.05
+            filtered_vlist=[]
+            for index in range(len(vlist)):
+                selectedline = vlist[index][0][0]
+                reject = 0
+                for line in filtered_vlist:
+                    if abs(abs(line[0][0]) -abs(selectedline)) < distance_cutoffV:
+                        reject = 1
+                if reject == 0:
+                    filtered_vlist.append(vlist[index])
+
+        return filtered_hlist, filtered_vlist
 
     def extract_corners(self):
+        """
+        https://stackoverflow.com/a/383527/5087436
+        :return:
+        """
         print('Extracting corners...')
         print("-------------------------------------")
+        linelist = []
         for key in tqdm(range(len(self.color_images_dict.keys()))):
             horizontal_line_list = []
             vertical_line_list = []
@@ -107,20 +134,82 @@ class Calibrate:
                         vertical_line_list.append(line)
             assert(len(horizontal_line_list)+len(vertical_line_list) == len(lines))
             horizontal_line_list, vertical_line_list = self.filter_list(horizontal_line_list, vertical_line_list)
+            assert(len(horizontal_line_list) == 10)
+            assert(len(vertical_line_list) == 8)
+            linelist.append(horizontal_line_list+vertical_line_list)
+        final_horizontal_lines, final_vertical_lines = self.filter_lines(linelist)
+        print('[1] Filtered lines')
+        print('[2] Corner extraction started')
+        corners = []
+        for key in tqdm(range(len(self.color_images_dict.keys()))):
+            individual_corners = []
+            for index_vertical in range(len(final_vertical_lines[key])):
+                for index_horizontal in range(len(final_horizontal_lines[key])):
+                    rho_horizontal, theta_horizontal = final_horizontal_lines[key][index_horizontal][0]
+                    rho_vertical, theta_vertical = final_vertical_lines[key][index_vertical][0]
+                    A = np.array([
+                        [np.cos(theta_vertical), np.sin(theta_vertical)],
+                        [np.cos(theta_horizontal), np.sin(theta_horizontal)]
+                    ])
+                    B = np.array([[rho_vertical],[rho_horizontal]])
+                    cornerX, cornerY = np.linalg.solve(A,B)
+                    cornerX, cornerY = int(np.round(cornerX)), int(np.round(cornerY))
+                    individual_corners.append([[cornerX,cornerY]])
+            corners.append(individual_corners)
+        corners_filtered = np.array(np.asarray(corners).copy()).tolist()
+        self.corner_list = corners_filtered
+        print('Corner extraction complete...')
+        print("-------------------------------------")
 
-
-
-
-
-
-
-
-
+    def estimate_corner_homography(self):
+        print("-------------------------------------")
+        print('Estimating Homography for corner refining...')
+        print("-------------------------------------")
+        H = []
+        for key in tqdm(range(len(self.color_images_dict.keys()))):
+            matrixA = np.zeros((len(self.corner_list[key])*2, 9))
+            for corner_index in range(len(self.corner_list[key])):
+                matrixA[2 * key + 0][0] = (key/10)*2.5
+                matrixA[2 * key + 0][1] = (key%10)*2.5
+                matrixA[2 * key + 0][2] = 1.0
+                matrixA[2 * key + 0][3] = 0.0
+                matrixA[2 * key + 0][4] = 0.0
+                matrixA[2 * key + 0][5] = 0.0
+                matrixA[2 * key + 0][6] = -1*((key/10)*2.5)*self.corner_list[key][corner_index][0][0]
+                matrixA[2 * key + 0][7] = -1*((key%10)*2.5)*self.corner_list[key][corner_index][0][0]
+                matrixA[2 * key + 0][8] = -1*self.corner_list[key][corner_index][0][0]
+                matrixA[2 * key + 1][0] = 0.0
+                matrixA[2 * key + 1][1] = 0.0
+                matrixA[2 * key + 1][2] = 0.0
+                matrixA[2 * key + 1][3] = (key/10)*2.5
+                matrixA[2 * key + 1][4] = (key%10)*2.5
+                matrixA[2 * key + 1][5] = 1.0
+                matrixA[2 * key + 1][6] = -1*((key/10)*2.5)*self.corner_list[key][corner_index][0][1]
+                matrixA[2 * key + 1][7] = -1 * ((key % 10) * 2.5) * self.corner_list[key][corner_index][0][1]
+                matrixA[2 * key + 1][8] = -1*self.corner_list[key][corner_index][0][1]
+            homography = np.zeros((3,3))
+            umatrix, dmatrix, vmatrixT = np.linalg.svd(matrixA)
+            H_matrix = np.transpose(vmatrixT)[:,-1]
+            H_matrix = H_matrix/H_matrix[8]
+            homography[0][0] = H_matrix[0]
+            homography[0][1] = H_matrix[1]
+            homography[0][2] = H_matrix[2]
+            homography[1][0] = H_matrix[3]
+            homography[1][1] = H_matrix[4]
+            homography[1][2] = H_matrix[5]
+            homography[2][0] = H_matrix[6]
+            homography[2][1] = H_matrix[7]
+            homography[2][2] = 1.0
+            H.append(homography)
+        print("-------------------------------------")
+        print('Homography estimation complete...')
+        print("-------------------------------------")
 
 if __name__ == "__main__":
     tester = Calibrate('./Files/Dataset1/*')
     tester.extract_lines()
     tester.extract_corners()
+    tester.estimate_corner_homography()
 
 
 
