@@ -12,6 +12,8 @@ import glob
 import pickle
 from tqdm import tqdm
 import cv2 as cv
+from PIL import Image,ImageFont,ImageDraw
+from scipy.optimize import least_squares
 import numpy as np
 from sklearn import svm
 from scipy import signal
@@ -32,11 +34,15 @@ class Calibrate:
         self.lines_dict = dict()
         self.corner_size = (8,10)
         self.corner_list = []
-        for index, element in enumerate(tqdm(self.image_path)):
+        self.homographies = []
+        self.calibration_performance = dict()
+        self.parameter_dict = dict()
+        self.reference_image = Image.open('Files/Dataset1/Pic_11.jpg')
+        self.draw = ImageDraw.Draw(self.reference_image)
+        for index, element in enumerate(tqdm(self.image_path, ascii=True, desc='Image loading')):
             image = cv.imread(element)
             self.color_images_dict[index] = image
             self.gray_images_dict[index] = cv.cvtColor(image, cv.COLOR_BGR2GRAY)
-        print("Image load complete...")
         print("Initialization complete")
         print("-------------------------------------")
         print("-------------------------------------")
@@ -53,9 +59,7 @@ class Calibrate:
         return (p1,p2),(p3,p4)
 
     def extract_lines(self, cutoff = 50, output_path='Files/calibration_output/edges_lines/'):
-        print("Detecting Edges and Lines...")
-        print("-------------------------------------")
-        for key in tqdm(range(len(self.color_images_dict.keys()))):
+        for key in tqdm(range(len(self.color_images_dict.keys())), ascii=True, desc='Edge & Line extraction'):
             color = (self.color_images_dict[key].copy())/2
             edges = cv.Canny(cv.GaussianBlur(self.gray_images_dict[key],(5,5),0),2500, 4000, apertureSize=5)
             color[edges!=0] = (0,0,255)
@@ -117,10 +121,8 @@ class Calibrate:
         https://stackoverflow.com/a/383527/5087436
         :return:
         """
-        print('Extracting corners...')
-        print("-------------------------------------")
         linelist = []
-        for key in tqdm(range(len(self.color_images_dict.keys()))):
+        for key in tqdm(range(len(self.color_images_dict.keys())), ascii=True, desc='Line filtering'):
             horizontal_line_list = []
             vertical_line_list = []
             color = self.color_images_dict[key].copy()
@@ -141,7 +143,7 @@ class Calibrate:
         print('[1] Filtered lines')
         print('[2] Corner extraction started')
         corners = []
-        for key in tqdm(range(len(self.color_images_dict.keys()))):
+        for key in tqdm(range(len(self.color_images_dict.keys())), ascii=True, desc='Corner extraction'):
             individual_corners = []
             for index_vertical in range(len(final_vertical_lines[key])):
                 for index_horizontal in range(len(final_horizontal_lines[key])):
@@ -158,15 +160,142 @@ class Calibrate:
             corners.append(individual_corners)
         corners_filtered = np.array(np.asarray(corners).copy()).tolist()
         self.corner_list = corners_filtered
-        print('Corner extraction complete...')
-        print("-------------------------------------")
+
+    def estimate_extrinsic(self):
+        omega = self.parameter_dict['omega']
+        centerX = ((omega[0][1]*omega[0][2])-(omega[0][0]*omega[1][2]))/((omega[0][0]*omega[1][1])-(omega[0][1]*omega[0][1]))
+        lambdavalue = omega[2][2] - (((omega[0][2]*omega[0][2])+centerX*((omega[0][1]*omega[0][2])-(omega[0][0]*omega[1][2])))/omega[0][0])
+        a_x,a_y = abs(np.sqrt(lambdavalue/omega[0][0])),abs(np.sqrt((lambdavalue*omega[0][0])/abs((omega[0][0]*omega[1][1])-(omega[0][1]*omega[0][1]))))
+        svalue = -1*((omega[0][1]*a_x*a_x*a_y)/(lambdavalue))
+        centerY = ((svalue*centerX)/a_y)-((omega[0][2]*a_x*a_x)/lambdavalue)
+        K = np.zeros((3,3))
+        K[0][0] = a_x
+        K[0][1] = svalue
+        K[0][2] = centerX
+        K[1][0] = 0.0
+        K[1][1] = a_y
+        K[1][2] = centerY
+        K[2][0] = 0.0
+        K[2][1] = 0.0
+        K[2][2] = 1.0
+        self.parameter_dict['K'] = K
+        self.parameter_dict['a_x'] = a_x
+        self.parameter_dict['a_y'] = a_y
+        self.parameter_dict['svalue'] = svalue
+        self.parameter_dict['centerX'] = centerX
+        self.parameter_dict['centerY'] = centerY
+
+        matrixR =[]
+        for key in tqdm(range(len(self.color_images_dict.keys())), ascii=True, desc='Extrinsic estimation'):
+            evalue = 1/np.linalg.norm(np.matmul(np.linalg.pinv(K), self.homographies[key][: , 0]))
+            firstR = evalue*np.matmul(np.linalg.pinv(K), self.homographies[key][: , 0])
+            secondR = evalue*np.matmul(np.linalg.pinv(K) ,self.homographies[key][: ,1])
+            thirdR = np.cross(firstR, secondR)
+            matrixZ = self.condition_rotation_matrix([firstR,secondR,thirdR])
+            firstR, secondR, thirdR = matrixZ[:,0],matrixZ[:,1], matrixZ[:,2]
+            tvalue = evalue*np.matmul(np.linalg.pinv(K) ,self.homographies[key][:,2])
+            rotationmatrix = np.zeros((3,4))
+            rotationmatrix[:,0] = firstR
+            rotationmatrix[:,1] = secondR
+            rotationmatrix[:,2] = thirdR
+            rotationmatrix[:,3] = tvalue
+            matrixR.append(rotationmatrix)
+        self.parameter_dict['R'] = matrixR
+
+
+    def condition_rotation_matrix(self, rvalues):
+        matrixQ = np.zeros((3,3))
+        matrixQ[:,0] = rvalues[0]
+        matrixQ[:,1] = rvalues[1]
+        matrixQ[:,2] = rvalues[2]
+        uvalue, dvalue, vvalueT = np.linalg.svd(matrixQ)
+        matrixZ = np.matmul(uvalue,vvalueT)
+        return matrixZ
+
+    def get_omega_matrix(self, matrixb):
+        matrix_omega = np.zeros((3, 3))
+        matrix_omega[0][0] = matrixb[0]
+        matrix_omega[0][1] = matrixb[1]
+        matrix_omega[0][2] = matrixb[3]
+        matrix_omega[1][0] = matrixb[1]
+        matrix_omega[1][1] = matrixb[2]
+        matrix_omega[1][2] = matrixb[4]
+        matrix_omega[2][0] = matrixb[3]
+        matrix_omega[2][1] = matrixb[4]
+        matrix_omega[2][2] = matrixb[5]
+        return matrix_omega
+
+
+    def compute_parameter_w(self):
+        matrixV = np.zeros((2*len(self.homographies),6))
+        for key in tqdm(range(len(self.color_images_dict.keys())), ascii=True, desc='Omega estimation'):
+            homography = np.transpose(self.homographies[key])
+            templist = []
+            for item in [(0,1),(0,0),(1,1)]:
+                vmatrix = np.zeros((1, 6))
+                vmatrix[0][0] = homography[item[0]][0] * homography[item[1]][0]
+                vmatrix[0][1] = (homography[item[0]][0] * homography[item[1]][1])+(homography[item[0]][1] * homography[item[1]][0])
+                vmatrix[0][2] = homography[item[0]][1] * homography[item[1]][1]
+                vmatrix[0][3] = (homography[item[0]][2] * homography[item[1]][0])+(homography[item[0]][0] * homography[item[1]][2])
+                vmatrix[0][4] = (homography[item[0]][2] * homography[item[1]][1]) + (
+                            homography[item[0]][1] * homography[item[1]][2])
+                vmatrix[0][5] = homography[item[0]][2] * homography[item[1]][2]
+                templist.append(vmatrix)
+            first_vmatrix = templist[0][0]
+            second_vmatrix = (templist[1] - templist[2])[0]
+            matrixV[2*key] = first_vmatrix
+            matrixV[2*key+1] = second_vmatrix
+        umatrix, dmatrix, vmatrixT = np.linalg.svd(matrixV)
+        matrixB = np.transpose(vmatrixT)[:,-1]
+        omega = self.get_omega_matrix(matrixB)
+        self.parameter_dict['omega'] = omega
+        self.parameter_dict['matrixV'] = matrixV
+
+    def calibrate_camera(self):
+        self.extract_lines()
+        self.extract_corners()
+        self.estimate_corner_homography()
+        self.compute_parameter_w()
+        self.estimate_extrinsic()
+        self.estimate_raw_H()
+        self.reproject_and_save()
+
+    def reproject_and_save(self, Htype = 'Raw'):
+        if Htype == 'Raw':
+            for key in tqdm(range(len(self.color_images_dict.keys())), ascii=True, desc='Reprojection Raw'):
+                if key == 10:
+                    pass
+                else:
+                    homography = np.matmul(self.homographies[10], np.linalg.pinv(self.homographies[key-1]))
+                    projection = []
+                    self.reference_image = Image.open('Files/Dataset1/Pic_11.jpg')
+                    self.draw = ImageDraw.Draw(self.reference_image)
+                    for index in range(len(self.corner_list[10])):
+                        coordinates = list(np.asarray(self.corner_list[key-1][key][0]).copy())
+                        coordinates.append(1.0)
+                        projectedpoint = np.matmul(homography, np.asarray(coordinates))
+                        projectedpoint = projectedpoint/projectedpoint[2]
+                        projection.append(projectedpoint[:-1])
+                    distance = []
+                    for corner_index in range(len(self.corner_list[10])):
+                        self.draw.text(( self.corner_list[10][corner_index][0][0] , self.corner_list[10][corner_index][0][1]) ,"*" ,(255,0,0))
+                        self.draw.text(( list(projection[corner_index]) [ 0 ] , list( projection[corner_index])[ 1 ] ) , " O" , ( 0 , 255 , 0 ))
+                        distance.append(np.linalg.norm(np.asarray(self.corner_list[10][corner_index][0])-projection[corner_index]))
+                    self.reference_image.save('Files/calibration_output/reprojection/'+str(key)+'.jpg')
+                    self.calibration_performance[key] = (np.mean(distance),np.var(distance))
+
+
+    def estimate_raw_H(self):
+        matrixR = np.asarray(self.parameter_dict['R'])
+        raw_homographies = []
+        K = self.parameter_dict['K']
+        for key in tqdm(range(len(self.color_images_dict.keys())), ascii=True, desc='Raw matrix estimation'):
+            raw_homographies.append(np.matmul(K,matrixR[key][:,[0,1,3]]))
+        self.parameter_dict['rawH'] = raw_homographies
 
     def estimate_corner_homography(self):
-        print("-------------------------------------")
-        print('Estimating Homography for corner refining...')
-        print("-------------------------------------")
         H = []
-        for key in tqdm(range(len(self.color_images_dict.keys()))):
+        for key in tqdm(range(len(self.color_images_dict.keys())), ascii=True, desc='Homography estimation'):
             matrixA = np.zeros((len(self.corner_list[key])*2, 9))
             for corner_index in range(len(self.corner_list[key])):
                 matrixA[2 * key + 0][0] = (key/10)*2.5
@@ -190,7 +319,10 @@ class Calibrate:
             homography = np.zeros((3,3))
             umatrix, dmatrix, vmatrixT = np.linalg.svd(matrixA)
             H_matrix = np.transpose(vmatrixT)[:,-1]
-            H_matrix = H_matrix/H_matrix[8]
+            if H_matrix[8] == 0 or H_matrix[8] ==NaN:
+                print("True divide conflict. Ignoring value...")
+            else:
+                H_matrix = H_matrix/H_matrix[8]
             homography[0][0] = H_matrix[0]
             homography[0][1] = H_matrix[1]
             homography[0][2] = H_matrix[2]
@@ -201,15 +333,12 @@ class Calibrate:
             homography[2][1] = H_matrix[7]
             homography[2][2] = 1.0
             H.append(homography)
-        print("-------------------------------------")
-        print('Homography estimation complete...')
-        print("-------------------------------------")
+        self.homographies = H
+
 
 if __name__ == "__main__":
     tester = Calibrate('./Files/Dataset1/*')
-    tester.extract_lines()
-    tester.extract_corners()
-    tester.estimate_corner_homography()
+    tester.calibrate_camera()
 
 
 
