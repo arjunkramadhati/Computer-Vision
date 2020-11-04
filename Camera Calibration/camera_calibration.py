@@ -244,7 +244,7 @@ class Calibrate:
         self.parameter_dict['centerY'] = centerY
 
         matrixR =[]
-        for key in tqdm(range(len(self.image_list_g)), ascii=True, desc='Extrinsic estimation'):
+        for key in tqdm(range(len(self.homographies)), ascii=True, desc='Extrinsic estimation'):
             evalue = 1/np.linalg.norm(np.matmul(np.linalg.pinv(K), self.homographies[key][: , 0]))
             firstR = evalue*np.matmul(np.linalg.pinv(K), self.homographies[key][: , 0])
             secondR = evalue*np.matmul(np.linalg.pinv(K) ,self.homographies[key][: ,1])
@@ -294,7 +294,7 @@ class Calibrate:
         :return: Stores the omega value in the dictionary
         """
         matrixV = np.zeros((2*len(self.homographies),6))
-        for key in tqdm(range(len(self.image_list_g)), ascii=True, desc='Omega estimation'):
+        for key in tqdm(range(len(self.homographies)), ascii=True, desc='Omega estimation'):
             homography = np.transpose(self.homographies[key])
             templist = []
             for item in [(0,1),(0,0),(1,1)]:
@@ -337,24 +337,25 @@ class Calibrate:
     def set_gamma(self, temp_estimate, center):
         return np.sqrt(np.square(temp_estimate[0]-center[0])+np.square(temp_estimate[1]-center[1]))
 
-    def calibration_cost(self):
+    def calibration_cost(self, point):
         """
         Cost function for LM refinement
         :return: Cost vector
         """
+
         resid = []
         for key in tqdm(range(len(self.image_list_g)), ascii=True, desc='LM Refine'):
-            omega_x = self.cost_variable[6*key+5]
-            omega_y = self.cost_variable[6*key+1+5]
-            omega_z = self.cost_variable[6*key+2+5]
-            first_t = self.cost_variable[6*key+3+5]
-            second_t = self.cost_variable[6*key+4+5]
-            third_t = self.cost_variable[6*key+5+5]
-            a_x = self.cost_variable[0]
-            svalue = self.cost_variable[1]
-            centerX = self.cost_variable[2]
-            a_y = self.cost_variable[3]
-            centerY = self.cost_variable[4]
+            omega_x = point[6*key+5]
+            omega_y = point[6*key+1+5]
+            omega_z = point[6*key+2+5]
+            first_t = point[6*key+3+5]
+            second_t = point[6*key+4+5]
+            third_t = point[6*key+5+5]
+            a_x = point[0]
+            svalue = point[1]
+            centerX = point[2]
+            a_y = point[3]
+            centerY = point[4]
             omegamatrix = np.zeros((3,1))
             omegamatrix[0] = omega_x
             omegamatrix[1] = omega_y
@@ -382,7 +383,7 @@ class Calibrate:
             rotation_matrix = np.zeros((3,3))
             rotation_matrix[:,0]=final_R[:,0]
             rotation_matrix[:,1]=final_R[:,1]
-            rotation_matrix[:,2]=final_R[matrixT]
+            rotation_matrix[:,2]=matrixT
             for imagecorner_index in range(len(self.corner_list_filtered[key])):
                 point_estimate = []
                 x_est = (imagecorner_index/10)*2.5
@@ -410,9 +411,11 @@ class Calibrate:
         self.cost_variable.append(self.parameter_dict['centerY'])
         for homography_index in range(len(self.homographies)):
             trace_value =(np.trace(matrixR[homography_index][:,0:3])-1)/2
-            if trace_value>1.0:trace=1.0
+            if trace_value>1.0:
+                trace=1.0
             phivalue = np.arccos(trace_value)
-            if phivalue==0:phi=1
+            if phivalue==0:
+                phi=1
             self.cost_variable.append((matrixR[homography_index][2][1]-matrixR[homography_index][1][2])*(phivalue/(2*np.sin(phivalue))))
             self.cost_variable.append((matrixR[homography_index][0][2] - matrixR[homography_index][2][0]) * (
                         phivalue / (2 * np.sin(phivalue))))
@@ -429,12 +432,12 @@ class Calibrate:
                 if key == 10:
                     pass
                 else:
-                    homography = np.matmul(self.homographies[10], np.linalg.pinv(self.homographies[key-1]))
+                    homography = np.matmul(self.parameter_dict['rawH'][10], np.linalg.pinv(self.parameter_dict['rawH'][key-1]))
                     projection = []
                     self.reference_image = Image.open('Files/Dataset1/Pic_11.jpg')
                     self.draw = ImageDraw.Draw(self.reference_image)
                     for index in range(len(self.corner_list[10])):
-                        coordinates = list(np.asarray(self.corner_list[key-1][key][0]).copy())
+                        coordinates = list(np.asarray(self.corner_list[key-1][index][0]).copy())
                         coordinates.append(1.0)
                         projectedpoint = np.matmul(homography, np.asarray(coordinates))
                         projectedpoint = projectedpoint/projectedpoint[2]
@@ -442,7 +445,7 @@ class Calibrate:
                     distance = []
                     for corner_index in range(len(self.corner_list[10])):
                         self.draw.text(( self.corner_list[10][corner_index][0][0] , self.corner_list[10][corner_index][0][1]) ,"*" ,(255,0,0))
-                        self.draw.text(( list(projection[corner_index]) [ 0 ] , list( projection[corner_index])[ 1 ] ) , " O" , ( 0 , 255 , 0 ))
+                        self.draw.text(( list(projection[corner_index]) [ 0 ] , list( projection[corner_index])[ 1 ] ) , " *" , ( 255 , 255 , 0 ))
                         distance.append(np.linalg.norm(np.asarray(self.corner_list[10][corner_index][0])-projection[corner_index]))
                     self.reference_image.save('Files/calibration_output/reprojection/'+str(key)+'.jpg')
                     self.calibration_performance[key] = (np.mean(distance),np.var(distance))
@@ -458,27 +461,27 @@ class Calibrate:
 
     def estimate_corner_homography(self):
         H = []
-        for key in tqdm(range(len(self.image_list_g)), ascii=True, desc='Homography estimation'):
-            matrixA = np.zeros((len(self.corner_list[key])*2, 9))
+        for key in tqdm(range(len(self.corner_list)), ascii=True, desc='Homography estimation'):
+            matrixA = np.zeros((2*len(self.corner_list[key]), 9))
             for corner_index in range(len(self.corner_list[key])):
-                matrixA[2 * key + 0][0] = (key/10)*2.5
-                matrixA[2 * key + 0][1] = (key%10)*2.5
-                matrixA[2 * key + 0][2] = 1.0
-                matrixA[2 * key + 0][3] = 0.0
-                matrixA[2 * key + 0][4] = 0.0
-                matrixA[2 * key + 0][5] = 0.0
-                matrixA[2 * key + 0][6] = -1*((key/10)*2.5)*self.corner_list[key][corner_index][0][0]
-                matrixA[2 * key + 0][7] = -1*((key%10)*2.5)*self.corner_list[key][corner_index][0][0]
-                matrixA[2 * key + 0][8] = -1*self.corner_list[key][corner_index][0][0]
-                matrixA[2 * key + 1][0] = 0.0
-                matrixA[2 * key + 1][1] = 0.0
-                matrixA[2 * key + 1][2] = 0.0
-                matrixA[2 * key + 1][3] = (key/10)*2.5
-                matrixA[2 * key + 1][4] = (key%10)*2.5
-                matrixA[2 * key + 1][5] = 1.0
-                matrixA[2 * key + 1][6] = -1*((key/10)*2.5)*self.corner_list[key][corner_index][0][1]
-                matrixA[2 * key + 1][7] = -1 * ((key % 10) * 2.5) * self.corner_list[key][corner_index][0][1]
-                matrixA[2 * key + 1][8] = -1*self.corner_list[key][corner_index][0][1]
+                matrixA[2 * corner_index + 0][0] = (corner_index/10)*2.5
+                matrixA[2 * corner_index + 0][1] = (corner_index%10)*2.5
+                matrixA[2 * corner_index + 0][2] = 1.0
+                matrixA[2 * corner_index + 0][3] = 0.0
+                matrixA[2 * corner_index + 0][4] = 0.0
+                matrixA[2 * corner_index + 0][5] = 0.0
+                matrixA[2 * corner_index + 0][6] = -1*((corner_index/10)*2.5)*self.corner_list[key][corner_index][0][0]
+                matrixA[2 * corner_index + 0][7] = -1*((corner_index%10)*2.5)*self.corner_list[key][corner_index][0][0]
+                matrixA[2 * corner_index + 0][8] = -1*self.corner_list[key][corner_index][0][0]
+                matrixA[2 * corner_index + 1][0] = 0.0
+                matrixA[2 * corner_index + 1][1] = 0.0
+                matrixA[2 * corner_index + 1][2] = 0.0
+                matrixA[2 * corner_index + 1][3] = (corner_index/10)*2.5
+                matrixA[2 * corner_index + 1][4] = (corner_index%10)*2.5
+                matrixA[2 * corner_index + 1][5] = 1.0
+                matrixA[2 * corner_index + 1][6] = -1*((corner_index/10)*2.5)*self.corner_list[key][corner_index][0][1]
+                matrixA[2 * corner_index + 1][7] = -1 * ((corner_index % 10) * 2.5) * self.corner_list[key][corner_index][0][1]
+                matrixA[2 * corner_index + 1][8] = -1*self.corner_list[key][corner_index][0][1]
             homography = np.zeros((3,3))
             umatrix, dmatrix, vmatrixT = np.linalg.svd(matrixA)
             H_matrix = np.transpose(vmatrixT)[:,-1]
