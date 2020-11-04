@@ -37,7 +37,8 @@ class Calibrate:
         self.corner_list_filtered = []
         self.homographies = []
         self.cost_variable = []
-        self.calibration_performance = dict()
+        self.calibration_performance_raw = dict()
+        self.calibration_performance_refined = dict()
         self.parameter_dict = dict()
         self.reference_image = Image.open('Files/Dataset1/Pic_11.jpg')
         self.draw = ImageDraw.Draw(self.reference_image)
@@ -66,6 +67,7 @@ class Calibrate:
         self.estimate_raw_H()
         self.reproject_and_save()
         self.refine_calibration()
+        self.reproject_and_save(Htype='Refined')
 
     def get_line(self, rho, theta):
         """
@@ -342,7 +344,6 @@ class Calibrate:
         Cost function for LM refinement
         :return: Cost vector
         """
-
         resid = []
         for key in tqdm(range(len(self.image_list_g)), ascii=True, desc='LM Refine'):
             omega_x = point[6*key+5]
@@ -424,7 +425,8 @@ class Calibrate:
             self.cost_variable.append(matrixR[homography_index][0][3])
             self.cost_variable.append(matrixR[homography_index][1][3])
             self.cost_variable.append(matrixR[homography_index][2][3])
-        optimised_R = least_squares(self.calibration_cost, self.cost_variable, method='lm',max_nfev=500)
+        optimised_R = least_squares(self.calibration_cost, self.cost_variable, method='lm',max_nfev=800)
+        self.estimate_refined_H(optimised_R)
 
     def reproject_and_save(self, Htype = 'Raw'):
         if Htype == 'Raw':
@@ -447,9 +449,74 @@ class Calibrate:
                         self.draw.text(( self.corner_list[10][corner_index][0][0] , self.corner_list[10][corner_index][0][1]) ,"*" ,(255,0,0))
                         self.draw.text(( list(projection[corner_index]) [ 0 ] , list( projection[corner_index])[ 1 ] ) , " *" , ( 255 , 255 , 0 ))
                         distance.append(np.linalg.norm(np.asarray(self.corner_list[10][corner_index][0])-projection[corner_index]))
-                    self.reference_image.save('Files/calibration_output/reprojection/'+str(key)+'.jpg')
-                    self.calibration_performance[key] = (np.mean(distance),np.var(distance))
+                    self.reference_image.save('Files/calibration_output/reprojection_raw/'+str(key)+'.jpg')
+                    self.calibration_performance_raw[key] = (np.mean(distance),np.var(distance))
+        elif Htype == 'Refined':
+            for key in tqdm(range(len(self.image_list_g)), ascii=True, desc='Reprojection Refined'):
+                if key == 10:
+                    pass
+                else:
+                    homography = np.matmul(self.parameter_dict['refined_homography'][10], np.linalg.pinv(self.parameter_dict['rawH'][key-1]))
+                    projection = []
+                    self.reference_image = Image.open('Files/Dataset1/Pic_11.jpg')
+                    self.draw = ImageDraw.Draw(self.reference_image)
+                    for index in range(len(self.corner_list[10])):
+                        coordinates = list(np.asarray(self.corner_list[key-1][index][0]).copy())
+                        coordinates.append(1.0)
+                        projectedpoint = np.matmul(homography, np.asarray(coordinates))
+                        projectedpoint = projectedpoint/projectedpoint[2]
+                        projection.append(projectedpoint[:-1])
+                    distance = []
+                    for corner_index in range(len(self.corner_list[10])):
+                        self.draw.text(( self.corner_list[10][corner_index][0][0] , self.corner_list[10][corner_index][0][1]) ,"*" ,(255,0,0))
+                        self.draw.text(( list(projection[corner_index])[0] , list( projection[corner_index])[ 1 ] ) , " *" , ( 255 , 255 , 0 ))
+                        distance.append(np.linalg.norm(np.asarray(self.corner_list[10][corner_index][0])-projection[corner_index]))
+                    self.reference_image.save('Files/calibration_output/reprojection_refined/'+str(key)+'.jpg')
+                    self.calibration_performance_refined[key] = (np.mean(distance),np.var(distance))
 
+    def estimate_refined_H(self, refined_R):
+        homography = []
+        for key in tqdm(range(len(self.image_list_g)), ascii=True, desc='Refined Homography'):
+            matrixK = np.zeros((3,3))
+            matrixK[0][0] = refined_R.x[0]
+            matrixK[0][1] = refined_R.x[1]
+            matrixK[0][2] = refined_R.x[2]
+            matrixK[1][1] = refined_R.x[3]
+            matrixK[1][2] = refined_R.x[4]
+            matrixK[2][2] = 1.0
+            matrixW = np.zeros((3,1))
+            matrixW_x = np.zeros((3,3))
+            matrixR = np.zeros((3,3))
+            matrixT = np.zeros((3))
+            firstr = np.zeros((3,3))
+            rotationmatrix = np.zeros((3,3))
+            omega_x,omega_y,omega_z =refined_R.x[5+6*key],refined_R.x[5+1+6*key], refined_R.x[5+2+6*key]
+            matrixW[0] = omega_x
+            matrixW[1] = omega_y
+            matrixW[2] = omega_z
+            phivalue = np.linalg.norm(matrixW)
+            matrixW_x[0][1] = -1*omega_z
+            matrixW_x[0][2] = omega_y
+            matrixW_x[1][0] = omega_z
+            matrixW_x[1][2] = -1*omega_x
+            matrixW_x[2][0] = -1*omega_y
+            matrixW_x[2][1] = omega_x
+            firstr[0][0] = 1.0
+            firstr[1][1] =1.0
+            firstr[2][2] = 1.0
+            secondr = (np.sin(phivalue)/phivalue)*matrixW_x
+            thirdr = ((1-np.cos(phivalue))/(phivalue*phivalue))*np.matmul(matrixW_x,matrixW_x)
+            matrixR = firstr+secondr+thirdr
+            matrixT[0] = refined_R.x[5+3+6*key]
+            matrixT[1] = refined_R.x[5+4+6*key]
+            matrixT[2] = refined_R.x[5+5+6*key]
+            rotationmatrix[:,0]=matrixR[:,0]
+            rotationmatrix[:,1] = matrixR[:,1]
+            rotationmatrix[:,2] = matrixT
+            homography.append(np.matmul(matrixK,rotationmatrix))
+            self.parameter_dict['refinedK'] = matrixK
+            self.parameter_dict['refinedRT'] = rotationmatrix
+        self.parameter_dict['refined_homography'] = homography
 
     def estimate_raw_H(self):
         matrixR = np.asarray(self.parameter_dict['R'])
