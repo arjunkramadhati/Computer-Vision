@@ -3,8 +3,11 @@ Computer Vision - Purdue University - Homework 9
 
 Author : Arjun Kramadhati Gopi, MS-Computer & Information Technology, Purdue University.
 Date: Nov 2, 2020
+-----------------------------------
 
+Reference : (Ref: https://engineering.purdue.edu/RVL/ECE661_2018/Homeworks/HW8/2BestSolutions/1.pdf)
 
+-----------------------------------
 [TO RUN CODE]: python3 camera_calibration.py
 """
 import re
@@ -29,8 +32,8 @@ class Calibrate:
         print("Initializing Calibration process...")
         self.image_path = glob.glob(image_path)
         print("Loading image from path " + image_path)
-        # self.color_images_dict = dict()
-        # self.gray_images_dict = dict()
+        self.color_images_dict = dict()
+        self.gray_images_dict = dict()
         self.lines_dict = dict()
         self.corner_size = (8,10)
         self.corner_list = []
@@ -50,24 +53,89 @@ class Calibrate:
             self.image_list_c.append(image)
             self.image_list_g.append(cv.cvtColor(image,cv.COLOR_BGR2GRAY))
         print(len(self.image_list_g))
-        # for index, element in enumerate(tqdm(self.image_path, ascii=True, desc='Image loading')):
-        #     image = cv.imread(element)
-        #     self.color_images_dict[index] = image
-        #     self.gray_images_dict[index] = cv.cvtColor(image, cv.COLOR_BGR2GRAY)
+        for index, element in enumerate(tqdm(self.image_path, ascii=True, desc='Image loading')):
+            image = cv.imread(element)
+            self.color_images_dict[index] = image
+            self.gray_images_dict[index] = cv.cvtColor(image, cv.COLOR_BGR2GRAY)
         print("Initialization complete")
         print("-------------------------------------")
         print("-------------------------------------")
 
-    def calibrate_camera(self):
-        self.extract_lines()
-        self.extract_corners()
-        self.estimate_corner_homography()
-        self.compute_parameter_w()
-        self.estimate_extrinsic()
-        self.estimate_raw_H()
-        self.reproject_and_save()
-        self.refine_calibration()
-        self.reproject_and_save(Htype='Refined')
+    def calibrate_camera(self, run_config = 'Run'):
+        """
+        This function sequences all the required functions needed to calibrate the camera
+        :return:
+        """
+        if run_config == 'Run':
+            #Extract lines
+            self.extract_lines()
+            #Extract corners from lines
+            self.extract_corners()
+            #
+            self.estimate_corner_homography()
+            self.compute_parameter_w()
+            self.estimate_extrinsic()
+            self.estimate_raw_H()
+            self.reproject_and_save()
+            self.refine_calibration()
+            self.reproject_and_save(Htype='Refined')
+            self.save_results()
+        elif run_config == 'Analyse':
+            self.analyse_results()
+
+    def save_results(self):
+        print("Saving Results...")
+        pickle.dump(self.parameter_dict,open("calibration_parameters.p","wb"))
+        pickle.dump(self.calibration_performance_raw, open("performance_raw.p","wb"))
+        pickle.dump(self.calibration_performance_refined,open("performance_refined.p","wb"))
+        print("Results saved")
+
+    def analyse_results(self):
+        """
+        Analyse the results of the calibration
+        :return:
+        """
+        parameters = pickle.load(open("calibration_parameters.p","rb"))
+        raw_performance = pickle.load(open("performance_raw.p","rb"))
+        refined_performance = pickle.load(open("performance_refined.p","rb"))
+        while True:
+            print(parameters.keys())
+            print("Enter Selection")
+            selection = input('Selection: ')
+            if selection == '0':
+                break
+            elif selection == '9':
+                pass
+            else:
+                if selection =='R' or 'refinedRT':
+                    print('Need index: ')
+                    index = input()
+                    print(parameters[selection][int(index)])
+                else:
+                    print(parameters[selection])
+            print('Continue?')
+            exit = input('0 for quit, 1 for continue')
+            if exit == 0:
+                break
+            elif exit == 1:
+                continue
+
+        while True:
+            print('Enter comparison image number')
+            i = input()
+            mean_raw = raw_performance[int(i)][0]
+            var_raw =raw_performance[int(i)][1]
+            mean_refined = refined_performance[int(i)][0]
+            var_refined = refined_performance[int(i)][1]
+            print("Image " + str(int(i)+1))
+            print("Mean before LM : "+ str(mean_raw) + "||||| Mean after LM : " + str(mean_refined))
+            print("Var before LM : " + str(var_raw) + "||||| Variance after LM : " + str(var_refined))
+            print("Continue?")
+            exit = input('0 for quit, 1 for continue')
+            if exit == 0:
+                quit()
+            elif exit == 1:
+                continue
 
     def get_line(self, rho, theta):
         """
@@ -96,7 +164,8 @@ class Calibrate:
         for key in tqdm(range(len(self.image_list_g)), ascii=True, desc='Edge & Line extraction'):
             color = (self.image_list_c[key].copy())/2
             edges = cv.Canny(cv.GaussianBlur(self.image_list_g[key],(5,5),0),2500, 4000, apertureSize=5)
-            color[edges!=0] = (0,0,255)
+            color[edges!=0] = (255,0,255)
+            cv.imwrite('Files/calibration_output/edges/'+str(key)+'.jpg', color)
             hline = cv.HoughLines(edges,1, np.pi/180, cutoff)
             for line in hline:
                 for rho, theta in line:
@@ -122,6 +191,14 @@ class Calibrate:
         return final_hlist_hesse, final_vlist_hesse
 
     def filter_list(self, hlist, vlist, distance_cutoffH = 100,distance_cutoffV = 100):
+        """
+        Filter the list of the hough line selections.
+        :param hlist: Horizontal hough lines
+        :param vlist: Vertical hough lines
+        :param distance_cutoffH: Cutoff criteria
+        :param distance_cutoffV: Cutoff criteria
+        :return: Filtered list of horizontal and vertical lines
+        """
         filtered_hlist = []
         filtered_vlist = []
         while(len(filtered_hlist)<10):
@@ -151,6 +228,12 @@ class Calibrate:
         return filtered_hlist, filtered_vlist
 
     def draw_filtered_lines(self, linelist, path='Files/calibration_output/final_lines/'):
+        """
+        Draw the final selected Hough Lines.
+        :param linelist: List of all detected hough lines
+        :param path: Path to save
+        :return:
+        """
         for key in tqdm(range(len(self.image_list_g)), ascii=True, desc='Drawing filtered lines and saving'):
             lines=linelist[key]
             image = copy.deepcopy(self.image_list_c[key])
@@ -208,6 +291,12 @@ class Calibrate:
         self.corner_list_filtered = corners_filtered
 
     def enumerate_draw_corners(self, corners, path ='Files/calibration_output/enumerated_corners/'):
+        """
+        Draw the numbers for each corner using the same numbering pattern.
+        :param corners: List of corners
+        :param path: Path to save the images.
+        :return:
+        """
         corners =np.array(np.asarray(corners).copy()).tolist()
         for key in tqdm(range(len(self.image_list_g)), ascii=True, desc='Enumerate coners'):
             image_path='Files/Dataset1/Pic_'+str(key+1)+'.jpg'
@@ -261,7 +350,6 @@ class Calibrate:
             rotationmatrix[:,3] = tvalue
             matrixR.append(rotationmatrix)
         self.parameter_dict['R'] = matrixR
-
 
     def condition_rotation_matrix(self, rvalues):
         """
@@ -404,6 +492,10 @@ class Calibrate:
         return resid
 
     def refine_calibration(self):
+        """
+        Refine the calibration parameters of the camera.
+        :return:
+        """
         matrixR = list(np.asarray(self.parameter_dict['R']))
         self.cost_variable.append(self.parameter_dict['a_x'])
         self.cost_variable.append(self.parameter_dict['svalue'])
@@ -413,10 +505,10 @@ class Calibrate:
         for homography_index in range(len(self.homographies)):
             trace_value =(np.trace(matrixR[homography_index][:,0:3])-1)/2
             if trace_value>1.0:
-                trace=1.0
+                trace_value=1.0
             phivalue = np.arccos(trace_value)
             if phivalue==0:
-                phi=1
+                phivalue=1
             self.cost_variable.append((matrixR[homography_index][2][1]-matrixR[homography_index][1][2])*(phivalue/(2*np.sin(phivalue))))
             self.cost_variable.append((matrixR[homography_index][0][2] - matrixR[homography_index][2][0]) * (
                         phivalue / (2 * np.sin(phivalue))))
@@ -429,6 +521,12 @@ class Calibrate:
         self.estimate_refined_H(optimised_R)
 
     def reproject_and_save(self, Htype = 'Raw'):
+        """
+        Reproject and save the images.
+        :param Htype:Type of homography used. Raw is for the normal homography and refined is for the
+        optimised homography value.
+        :return:
+        """
         if Htype == 'Raw':
             for key in tqdm(range(len(self.image_list_g)), ascii=True, desc='Reprojection Raw'):
                 if key == 10:
@@ -475,7 +573,13 @@ class Calibrate:
                     self.calibration_performance_refined[key] = (np.mean(distance),np.var(distance))
 
     def estimate_refined_H(self, refined_R):
+        """
+        Estimate the refined homography needed to reproject the points
+        :param refined_R: Refined R matrix we got by running the LM least squares algorithm
+        :return:
+        """
         homography = []
+        templist = []
         for key in tqdm(range(len(self.image_list_g)), ascii=True, desc='Refined Homography'):
             matrixK = np.zeros((3,3))
             matrixK[0][0] = refined_R.x[0]
@@ -514,11 +618,16 @@ class Calibrate:
             rotationmatrix[:,1] = matrixR[:,1]
             rotationmatrix[:,2] = matrixT
             homography.append(np.matmul(matrixK,rotationmatrix))
+            templist.append(rotationmatrix)
             self.parameter_dict['refinedK'] = matrixK
-            self.parameter_dict['refinedRT'] = rotationmatrix
+        self.parameter_dict['refinedRT'] = templist
         self.parameter_dict['refined_homography'] = homography
 
     def estimate_raw_H(self):
+        """
+        Estimate the homography needed for the reprojection of the points.
+        :return:
+        """
         matrixR = np.asarray(self.parameter_dict['R'])
         raw_homographies = []
         K = self.parameter_dict['K']
@@ -527,6 +636,10 @@ class Calibrate:
         self.parameter_dict['rawH'] = raw_homographies
 
     def estimate_corner_homography(self):
+        """
+        Estimate the homography which maps the corners and their world coordinates
+        :return:
+        """
         H = []
         for key in tqdm(range(len(self.corner_list)), ascii=True, desc='Homography estimation'):
             matrixA = np.zeros((2*len(self.corner_list[key]), 9))
@@ -570,6 +683,9 @@ class Calibrate:
 
 
 if __name__ == "__main__":
+    """
+    Program starts here.
+    """
     tester = Calibrate('./Files/Dataset1/*')
     tester.calibrate_camera()
 
