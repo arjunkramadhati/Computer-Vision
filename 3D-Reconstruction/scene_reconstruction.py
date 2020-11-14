@@ -55,6 +55,38 @@ class Reconstruct:
         T1,T2 = np.array([[s1, 0, x1], [0, s1, y1], [0, 0, 1]]),np.array([[s2, 0, x2], [0, s2, y2], [0, 0, 1]])
         self.parameter_dict['T1'] = T1
         self.parameter_dict['T2'] = T2
+        self.parameter_dict['NLeft'] = np.matmul(T1, np.array(list(map(lambda x: [x[0], x[1], 1], self.left_manual_points))).T)
+        self.parameter_dict['NRight'] = np.matmul(T2, np.array(
+            list(map(lambda x: [x[0], x[1], 1], self.right_manual_points))).T)
+        NLeftT= self.parameter_dict['NLeft'].T
+        NRightT = self.parameter_dict['NRight'].T
+        matrixA = self.getA(NLeftT,NRightT)
+        u,d,vt = np.linalg.svd(matrixA)
+        v=vt.T
+        initial_F_estimate = v[:,v.shape[1]-1]
+        assert len(initial_F_estimate)==9
+        initial_F_estimate=initial_F_estimate.reshape(3,3)
+        initial_F_estimate = self.reinforce_F_estimate(initial_F_estimate,T1,T2)
+        self.parameter_dict['F']=initial_F_estimate
+
+    def reinforce_F_estimate(self, F, T1,T2):
+        u,d,vt = np.linalg.svd(F)
+        d=np.array([[d[0],0,0],[0,d[1],0],[0,0,0]])
+        return np.matmul(np.matmul(T2.T, np.matmul(np.matmul(u, d), vt)), T1)
+
+    def getA(self,point_left, point_right):
+        matrixA = list()
+        for index in range(len(point_left)):
+            value = [self.right_manual_points[index][0]*self.left_manual_points[index][0],
+                     self.right_manual_points[index][0]*self.left_manual_points[index][1],
+                     self.right_manual_points[index][0],self.right_manual_points[index][1]*self.left_manual_points[index][0],
+                     self.right_manual_points[index][1]*self.left_manual_points[index][1],
+                     self.right_manual_points[index][1],
+                     self.left_manual_points[index][0],
+                     self.right_manual_points[index][1],
+                     1.0]
+            matrixA.append(value)
+        return matrixA
 
     def process_points(self):
         for element_index in tqdm(range(len(self.roiCoordinates)),desc='Point process'):
