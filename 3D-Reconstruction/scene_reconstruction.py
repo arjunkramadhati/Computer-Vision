@@ -14,6 +14,7 @@ import pickle
 import cv2 as cv
 import numpy as np
 from tqdm import tqdm
+from scipy.linalg import null_space
 from sklearn import svm
 from scipy import signal
 from sklearn.model_selection import train_test_split
@@ -35,10 +36,17 @@ class Reconstruct:
             file = cv.imread(image_paths[image_path_index])
             self.image_pair.append(file)
             self.image_specs.append(file.shape)
+        self.reference_center = np.array([[self.image_specs[0][1] / 2.0, self.image_specs[0][0] / 2.0, 1]])
+        print("----------------------------")
+        print("Initialization complete")
+        print("----------------------------")
 
     def schedule(self):
+        #1Get interest points from user
         self.getROIFromUser()
+        #2Process the points: Segregate them based on the left and right images
         self.process_points()
+        #3Perform stereo rectification
         self.process_rectification()
 
     def process_rectification(self):
@@ -67,7 +75,64 @@ class Reconstruct:
         assert len(initial_F_estimate)==9
         initial_F_estimate=initial_F_estimate.reshape(3,3)
         initial_F_estimate = self.reinforce_F_estimate(initial_F_estimate,T1,T2)
-        self.parameter_dict['F']=initial_F_estimate
+        self.parameter_dict['F_beta']=initial_F_estimate
+        print("----------------------------")
+        print("Initial F estimate complete")
+        print("----------------------------")
+        e_one,e_two = self.get_nulls(self.parameter_dict['F_beta'])
+        H2 = self.get_homography(e_one=e_one,e_two=e_two,type='H2')
+        center_value = self.get_updated_center(homography=H2)
+        second_T_value = np.array([[1, 0, (self.image_specs[0][1] / 2.0) - center_value[0]], [0, 1, (self.image_specs[0][0] / 2.0) - center_value[1]], [0, 0, 1]])
+        H2 = np.matmul(second_T_value,H2)
+        H1 = self.get_homography(e_one=e_one, e_two=e_two, type='H1')
+        center_value_2 = self.get_updated_center(homography=H1)
+        first_T_value = np.array([[1, 0, (self.image_specs[0][1] / 2.0) - center_value_2[0]], [0, 1, (self.image_specs[0][0] / 2.0) - center_value_2[1]], [0, 0, 1]])
+        H1 = np.matmul(first_T_value,H1)
+
+    def get_P_values(self, e_one, e_two, F ):
+        P_dash_value = np.matmul(
+            np.array(
+                [[0, -1 * e_two[2], e_two[1]], [e_two[2], 0, -1 * e_two[0]], [-1 * e_two[1], e_two[0], 0]])
+        )
+
+    def get_updated_center(self, homography):
+        center = np.matmul(homography,self.reference_center.T)
+        return center/center[2]
+
+    def get_homography(self,e_one, e_two, type):
+        if type == 'H2':
+            theta_value = self.get_theta(e_one=e_one,e_two=e_two,image_index=0, type='2')
+            F_value = (np.cos(theta_value)*(e_two[0]-self.image_specs[0][1]/2.0)-np.sin(theta_value)*(e_two[1]-self.image_specs[0][0]/2.0))[0]
+            R_value = np.array([[np.cos(theta_value)[0], -1 * np.sin(theta_value)[0], 0], [np.sin(theta_value)[0], np.cos(theta_value)[0], 0], [0, 0, 1]])
+            T_value = np.array([[1, 0, -1 * self.image_specs[0][1] / 2.0], [0, 1, -1 * self.image_specs[0][0] / 2.0], [0, 0, 1]])
+            G_value = np.array([[1, 0, 0], [0, 1, 0], [-1.0 / F_value, 0, 1]])
+            H = np.matmul(np.matmul(G_value,R_value),T_value)
+            assert H.shape == (3,3)
+            return H
+        elif type == ' H1':
+            theta_value = self.get_theta(e_one=e_one,e_two=e_two,image_index=0, type='1')
+            F_value = (np.cos(theta_value) * (e_one[0] - self.image_specs[0][1] / 2.0) - np.sin(theta_value) * (e_one[1] - self.image_specs[0][0] / 2.0))[0]
+            R_value = np.array([[np.cos(theta_value)[0], -1 * np.sin(theta_value)[0], 0], [np.sin(theta_value)[0], np.cos(theta_value)[0], 0], [0, 0, 1]])
+            T_value = np.array([[1, 0, -1 * self.image_specs[0][1] / 2.0], [0, 1, -1 * self.image_specs[0][0] / 2.0], [0, 0, 1]])
+            G_value = np.array([[1, 0, 0], [0, 1, 0], [-1.0 / F_value, 0, 1]])
+            H = np.matmul(np.matmul(G_value,R_value),T_value)
+            assert H.shape == (3,3)
+            return H
+
+
+    def get_theta(self, e_one, e_two, image_index, type):
+        if type == '2':
+            return np.arctan(-1*(e_two[1]-self.image_specs[image_index][0]/2.0)/(e_two[0]-self.image_specs[image_index][1]/2.0))
+        elif type == '1':
+            return np.arctan(-1 * (e_one[1] - self.image_specs[image_index][0] / 2.0) / (
+                        e_one[0] - self.image_specs[image_index][1] / 2.0))
+
+    def get_nulls(self, F):
+        e_one = null_space(F)
+        e_two = null_space(F.T)
+        e_one = e_one/e_one[2]
+        e_two = e_two/e_two[2]
+        return e_one, e_two
 
     def reinforce_F_estimate(self, F, T1,T2):
         u,d,vt = np.linalg.svd(F)
