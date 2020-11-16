@@ -43,6 +43,7 @@ class Reconstruct:
 
     def schedule(self):
         #1Get interest points from user
+        print('hello')
         self.getROIFromUser()
         #2Process the points: Segregate them based on the left and right images
         self.process_points()
@@ -88,12 +89,64 @@ class Reconstruct:
         center_value_2 = self.get_updated_center(homography=H1)
         first_T_value = np.array([[1, 0, (self.image_specs[0][1] / 2.0) - center_value_2[0]], [0, 1, (self.image_specs[0][0] / 2.0) - center_value_2[1]], [0, 0, 1]])
         H1 = np.matmul(first_T_value,H1)
+        self.parameter_dict['H1&H2']=[H1,H2]
+        P_dash_value = self.get_P_values(e_two=e_two,F=self.parameter_dict['F_beta'])
+        print("----------------------------")
+        print("H1 & H2 estimation complete")
+        print("----------------------------")
+        self.rectify_image()
+        print("----------------------------")
+        print("Individual rectification complete")
+        print("----------------------------")
 
-    def get_P_values(self, e_one, e_two, F ):
-        P_dash_value = np.matmul(
+    def rectify_image(self):
+
+        for index, element in self.parameter_dict['H1&H2']:
+            correlation = self.get_correlation(index,element)
+            values = [min(correlation[0]), min(correlation[1]),max(correlation[0]), max(correlation[1])]
+            d_im = np.array(values[1]) - np.array(values[0])
+            d_im = [int(d_im[0]), int(d_im[1])]
+            scale = np.array([[self.image_specs[index][1] / d_im[0], 0, 0], [0, self.image_specs[index][0] / d_im[1], 0], [0, 0, 1]])
+            H = np.matmul(scale, element)
+            correlation = self.get_correlation(index,H)
+            values_2 = [min(correlation[0]), min(correlation[1])]
+            d_im = values_2
+            d_im = [int(d_im[0]), int(d_im[1])]
+            T_value = np.array([[1, 0, -1 * d_im[0] + 1], [0, 1, -1 * d_im[1] + 1], [0, 0, 1]])
+            homography_n = np.matmul(T_value, H)
+            inverse_homography = np.linalg.pinv(homography_n)
+            result_image = self.create_image(index=index,H=inverse_homography)
+            self.parameter_dict['Rectified_Params'+str(index)] = [result_image, homography_n]
+
+
+    def create_image(self, index, H):
+        result_image = np.zeros((self.image_specs[index][0], self.image_specs[index][1], 3))
+        for row in range(self.image_specs[index][0]):
+            for column in range(self.image_specs[index][1]):
+                temp_variable = np.matmul(H, np.array([[row],[column],[1]]))
+                temp_variable = temp_variable/temp_variable[2]
+                if temp_variable[0] >= 0 and temp_variable[0] < self.image_specs[index][0] and int(temp_variable[1]) >= 0 and int(temp_variable[1]) < self.image_specs[index][1]:
+                    result_image[row, column] = self.image_pair[index][int(temp_variable[0]), int(temp_variable[1])]
+        cv.imwrite('rectified_'+str(index)+'.jpg',result_image)
+        return result_image
+
+    def get_correlation(self, index, element):
+        correlation = np.matmul(element, np.array(
+            [[0, self.image_specs[index][1], 0, self.image_specs[index][1]],
+             [0, 0, self.image_specs[index][0], self.image_specs[index][0]], [1, 1, 1, 1]]))
+        return (correlation / correlation[2])
+
+
+    def get_P_values(self, e_two, F ):
+        return np.append(np.matmul(
             np.array(
-                [[0, -1 * e_two[2], e_two[1]], [e_two[2], 0, -1 * e_two[0]], [-1 * e_two[1], e_two[0], 0]])
-        )
+                [[0, -1 * e_two[2], e_two[1]], [e_two[2], 0, -1 * e_two[0]], [-1 * e_two[1], e_two[0], 0]]),
+            F
+        ),
+        np.array([e_two[0], e_two[1], e_two[2]])
+        ,
+        axis=1)
+
 
     def get_updated_center(self, homography):
         center = np.matmul(homography,self.reference_center.T)
@@ -181,10 +234,13 @@ class Reconstruct:
 
         """
         self.roiList = []
+        print('sd')
         cv.namedWindow('Select ROI')
+        print('named')
         cv.setMouseCallback('Select ROI', self.append_points)
         self.image = np.hstack((self.image_pair[0],self.image_pair[1]))
-        while (True):
+        print('e')
+        while(True):
             cv.imshow('Select ROI', self.image)
             k = cv.waitKey(1) & 0xFF
             if cv.waitKey(1) & 0xFF == ord('q'):
