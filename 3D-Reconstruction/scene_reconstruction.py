@@ -469,20 +469,20 @@ class Reconstruct:
             pickle.dump(self.roiCoordinates,open('points.obj','wb'))
             cv.imwrite('result_1.jpg',self.image)
 
-        # if type2 == 'yes':
-        #     self.roiCoordinates_3d = pickle.load(open('points3d.obj','rb'))
-        # elif type2 == 'No':
-        #     print('here')
-        #     cv.namedWindow('3D ROI')
-        #     cv.setMouseCallback('3D ROI', self.append_points_3d)
-        #     self.image_3d = np.hstack((self.image_pair[0],self.image_pair[1]))
-        #     while(True):
-        #         cv.imshow('Select ROI', self.image_3d)
-        #         k = cv.waitKey(1) & 0xFF
-        #         if cv.waitKey(1) & 0xFF == ord('q'):
-        #             break
-        #     pickle.dump(self.roiCoordinates_3d, open('points3d.obj', 'wb'))
-        #     cv.imwrite('3d_points.jpg', self.image)
+        if type2 == 'yes':
+            self.roiCoordinates_3d = pickle.load(open('points3d.obj','rb'))
+        elif type2 == 'No':
+            print('here')
+            cv.namedWindow('3D ROI')
+            cv.setMouseCallback('3D ROI', self.append_points_3d)
+            self.image_3d = np.hstack((self.image_pair[0],self.image_pair[1]))
+            while(True):
+                cv.imshow('Select ROI', self.image_3d)
+                k = cv.waitKey(1) & 0xFF
+                if cv.waitKey(1) & 0xFF == ord('q'):
+                    break
+            pickle.dump(self.roiCoordinates_3d, open('points3d.obj', 'wb'))
+            cv.imwrite('3d_points.jpg', self.image)
 
     def get_sliding_window(self, image, column, row, left = 2, right = 3):
         """
