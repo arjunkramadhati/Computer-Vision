@@ -24,16 +24,22 @@ from PIL import Image,ImageFont,ImageDraw
 class Reconstruct:
 
     def __init__(self, image_paths):
+        """
+        Initialize the object
+        :param image_paths: Path to the two images
+        """
         self.image_pair = list()
         self.grey_image_pair = list()
         self.roiList = list()
         self.roiCoordinates = list()
+        self.roiCoordinates_3d = list()
         self.image_specs = list()
         self.left_manual_points = list()
         self.right_manual_points = list()
         self.count = 0
         self.padding = int(31 / 2)
         self.parameter_dict = dict()
+        self.parameter_dict['P_triangulation']=np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]])
         for image_path_index in tqdm(range(len(image_paths)), desc='Image Load'):
             file = cv.imread(image_paths[image_path_index])
             self.image_pair.append(file)
@@ -45,15 +51,26 @@ class Reconstruct:
         print("----------------------------")
 
     def schedule(self):
+        """
+        This function runs all the required processes in sequence.
+        :return:
+        """
         #1Get interest points from user
-        print('hello')
         self.getROIFromUser(type='yes')
         #2Process the points: Segregate them based on the left and right images
         self.process_points()
         #3Perform stereo rectification
         self.process_rectification()
+        #4Extract corners
+        self.extract_corners()
+        #5Corresponding matching
+        self.get_closest_match()
 
     def process_rectification(self):
+        """
+        Perform stereo rectification
+        :return:
+        """
         x1,x2 = list(map(lambda  x: x[0], self.left_manual_points)),list(map(lambda  x: x[0], self.right_manual_points))
         y1,y2 = list(map(lambda  x: x[1], self.left_manual_points)),list(map(lambda  x: x[1], self.right_manual_points))
         mux_1,mux_2 = np.mean(x1),np.mean(x2)
@@ -72,7 +89,7 @@ class Reconstruct:
             list(map(lambda x: [x[0], x[1], 1], self.right_manual_points))).T)
         NLeftT= self.parameter_dict['NLeft'].T
         NRightT = self.parameter_dict['NRight'].T
-        matrixA = self.getA(NLeftT,NRightT)
+        matrixA = self.obtain_matrix_A(NLeftT,NRightT)
         u,d,vt = np.linalg.svd(matrixA)
         v=vt.T
         initial_F_estimate = v[:,v.shape[1]-1]
@@ -121,9 +138,15 @@ class Reconstruct:
         cv.imwrite('Rectification.jpg', rectification)
         # return [rect_img1, rect_img2, F, point_one, point_two, H1, H2, P_dash]
         self.parameter_dict['P_dash_value'] = P_dash_value
+        print("Rectification complete")
 
     def rectify_image(self):
-
+        """
+        This function specifically applies the two homographies
+        to the respective images which will effectively send their
+        epipoles to infinity along the x-axis
+        :return:
+        """
         for index, element in enumerate(self.parameter_dict['H1&H2']):
             correlation = self.get_correlation(index,element)
             values = [[min(correlation[0]), min(correlation[1])],[max(correlation[0]), max(correlation[1])]]
@@ -142,7 +165,12 @@ class Reconstruct:
             result_image = self.create_image(index=index,H=inverse_homography)
             self.parameter_dict['Rectified_Params'+str(index)] = [result_image, homography_n]
 
-    def ncc(self):
+    def get_closest_match(self):
+        """
+        Function to find the nearest neighbor match to find the
+        corresponding pixel in the second image.
+        :return: rectified corners and the list of the nearest neighbors
+        """
         corners_left = self.parameter_dict['corners_right']
         corners_right = self.parameter_dict['corners_right']
         image_left = self.image_pair[0]
@@ -170,27 +198,40 @@ class Reconstruct:
                                                 np.sqrt(
                                                     np.multiply(np.sum(np.square(term_value_one)), np.sum(np.square(term_value_right)))))
 
-        to_ret = []
-        nccs = []
-        track = np.ones(len(corners_right))
+        rectify = list()
+        neighbors = list()
+        index_list = np.ones(len(corners_right))
         for row in range(len(ncc)):
             cur = ncc[row]
-            to_find = cur[cur >= -1]
-            if len(to_find) > 0:
-                column = np.argmax(to_find)
-                if abs(corners_left[row][0] - corners_right[column][0]) < 30 and abs(corners_left[row][1] - corners_right[column][1]) < 60 and track[
-                    column] == 1:  # and max(to_find) > 0.45:
-                    if track[column] == 1 and max(to_find) > 0.6:
-                        nccs.append(max(to_find))
-                        to_ret.append([corners_left[row], corners_right[column]])
-                        track[column] = 0
-        # sorted_idx = np.argsort(nccs)
-        return (to_ret, nccs)
+            value = cur[cur >= -1]
+            if len(value) > 0:
+                column = np.argmax(value)
+                if abs(corners_left[row][0] - corners_right[column][0]) < 30 and abs(corners_left[row][1] - corners_right[column][1]) < 60 and index_list[
+                    column] == 1:
+                    if index_list[column] == 1 and max(value) > 0.6:
+                        neighbors.append(max(value))
+                        rectify.append([corners_left[row], corners_right[column]])
+                        index_list[column] = 0
+        print('Returning closest match')
+        return (rectify, neighbors)
 
-    def get_corners(self):
+    def extract_corners(self):
+        """
+        Extract the corners from the images using Canny edge detector
+        :return: Stores list of the corner coordinates.
+        """
         edge_left = cv.Canny(self.grey_image_pair[0],25581.5,255)
         edge_right = cv.Canny(self.grey_image_pair[1],255*1.5,255)
-        edge_left,edge_right = self.filter_edges([edge_left,edge_right])
+        edge_list = [edge_left,edge_right]
+        temp = []
+        for element in edge_list:
+            for row in range(element.shape[0]):
+                for column in range(element.shape[1]):
+                    if column < 40 or column > 350 or row < 100:
+                        element[row, column] = 0
+            temp.append(element)
+        edge_left = temp[0]
+        edge_right =temp[1]
         cv.imwrite('edges_left_image.jpg',edge_left)
         cv.imwrite('edges_right_image.jpg', edge_right)
         corners = list()
@@ -205,18 +246,15 @@ class Reconstruct:
                             corner_list.append([row,column])
             corners.append(corner_list)
         self.parameter_dict['corners_list_all'] = corners
-
-    def filter_edges(self, edge_list):
-        temp = []
-        for element in edge_list:
-            for row in range(element.shape[0]):
-                for column in range(element.shape[1]):
-                    if column < 40 or column > 350 or row < 100:
-                        element[row, column] = 0
-            temp.append(element)
-        return temp
+        print('Corner extraction complete')
 
     def create_image(self, index, H):
+        """
+        Create and store each of the rectified images
+        :param index: Index of the image being considered
+        :param H: Homography to project the new image
+        :return: Rectified image
+        """
         result_image = np.zeros((self.image_specs[index][0], self.image_specs[index][1], 3))
         for row in range(self.image_specs[index][0]):
             for column in range(self.image_specs[index][1]):
@@ -228,13 +266,43 @@ class Reconstruct:
         return result_image
 
     def get_correlation(self, index, element):
+        """
+        Return the correlation needed to rectify the image
+        :param index: Index of the image being considered
+        :param element: Homography estimation
+        :return: Return the correlation needed to rectify the image
+        """
         correlation = np.matmul(element, np.array(
             [[0, self.image_specs[index][1], 0, self.image_specs[index][1]],
              [0, 0, self.image_specs[index][0], self.image_specs[index][0]], [1, 1, 1, 1]]))
         return (correlation / correlation[2])
 
+    def triangulate_world_points(self, point_values, P_dash_value):
+        """
+        Function to estimate the triangulated world point coordinate
+        using the corresponding pixel pairs from the left and right images
+        :param point_values: Point pair
+        :return: Triangulated world point coordinate
+        """
+        triangularted_world_points = list()
+        P = self.parameter_dict['P_triangulation']
+        for (point_one, point_two) in point_values:
+            matrixA = np.array([point_one[0] * P[2] - P[0],
+                          point_one[1] * P[2] - P[1],
+                          point_two[0] * P_dash_value[2] - P_dash_value[0],
+                          point_two[1] * P_dash_value[2] - P_dash_value[1]])
+            u, d, v_t = np.linalg.svd(matrixA)
+            v = v_t.T
+            variable = v[:, -1]
+            variable = variable/ variable[3]
+            triangularted_world_points.append(variable)
+        return triangularted_world_points
 
     def get_P_values(self, e_two, F ):
+        """
+        Function to estimate the metric needed to triangulate the
+        world point
+        """
         return np.append(np.matmul(
             np.array(
                 [[0, -1 * e_two[2], e_two[1]], [e_two[2], 0, -1 * e_two[0]], [-1 * e_two[1], e_two[0], 0]]),
@@ -245,10 +313,20 @@ class Reconstruct:
         axis=1)
 
     def get_updated_center(self, homography):
+        """
+        Get the updated centers of the images.
+        :param homography: Homography
+        :return: updated center
+        """
         center = np.matmul(homography,self.reference_center.T)
         return center/center[2]
 
     def get_homography(self,e_one, e_two, type):
+        """
+        Calculate the homography to tranform or rectify the images.
+        :param type: H1 for image one, H2 for image two
+        :return: Homography estimation
+        """
         if type == 'H2':
             theta_value = self.get_theta(e_one=e_one,e_two=e_two,image_index=0, type='2')
             F_value = (np.cos(theta_value)*(e_two[0]-self.image_specs[0][1]/2.0)-np.sin(theta_value)*(e_two[1]-self.image_specs[0][0]/2.0))[0]
@@ -256,7 +334,7 @@ class Reconstruct:
             T_value = np.array([[1, 0, -1 * self.image_specs[0][1] / 2.0], [0, 1, -1 * self.image_specs[0][0] / 2.0], [0, 0, 1]])
             G_value = np.array([[1, 0, 0], [0, 1, 0], [-1.0 / F_value, 0, 1]])
             H = np.matmul(np.matmul(G_value,R_value),T_value)
-            assert H.shape == (3,3)
+            print('Returning H2')
             return H
         elif type == 'H1':
             theta_value = self.get_theta(e_one=e_one,e_two=e_two,image_index=0, type='1')
@@ -265,12 +343,16 @@ class Reconstruct:
             T_value = np.array([[1, 0, -1 * self.image_specs[0][1] / 2.0], [0, 1, -1 * self.image_specs[0][0] / 2.0], [0, 0, 1]])
             G_value = np.array([[1, 0, 0], [0, 1, 0], [-1.0 / F_value, 0, 1]])
             H = np.matmul(np.matmul(G_value,R_value),T_value)
-            assert H.shape == (3,3)
             print('Returning H1')
             return H
 
-
     def get_theta(self, e_one, e_two, image_index, type):
+        """
+        Theta value to calculate the homography for stereo rectification
+        :param image_index: Image index for the image under consideration
+        :param type: 2 for second image and 1 for the first image
+        :return: Theta value
+        """
         if type == '2':
             return np.arctan(-1*(e_two[1]-self.image_specs[image_index][0]/2.0)/(e_two[0]-self.image_specs[image_index][1]/2.0))
         elif type == '1':
@@ -285,11 +367,20 @@ class Reconstruct:
         return e_one, e_two
 
     def reinforce_F_estimate(self, F, T1,T2):
+        """
+        Make sure the F estimation has a rank of two.
+        :param F: Initial F estimation
+        :return: Reinforced F estimation
+        """
         u,d,vt = np.linalg.svd(F)
         d=np.array([[d[0],0,0],[0,d[1],0],[0,0,0]])
         return np.matmul(np.matmul(T2.T, np.matmul(np.matmul(u, d), vt)), T1)
 
-    def getA(self,point_left, point_right):
+    def obtain_matrix_A(self,point_left, point_right):
+        """
+        Matrix to determine the first estimation of F
+        :return: Matrix A
+        """
         matrixA = list()
         for index in range(len(point_left)):
             value = [self.right_manual_points[index][0]*self.left_manual_points[index][0],
@@ -304,12 +395,25 @@ class Reconstruct:
         return matrixA
 
     def process_points(self):
+        """
+        Segregate the interest points into two unique list each for one of
+        the two images. The coordinates of the second image are updated to
+        account for the offset along the width.
+        :return: Store the left and right interest points
+        """
         for element_index in tqdm(range(len(self.roiCoordinates)),desc='Point process'):
             if self.roiCoordinates[element_index][0]>self.image_specs[0][1]:
                 point = (self.roiCoordinates[element_index][0]-self.image_specs[0][1],self.roiCoordinates[element_index][1])
                 self.right_manual_points.append(point)
             else:
                 self.left_manual_points.append(self.roiCoordinates[element_index])
+        pickle.dump(self.left_manual_points,open('left_manual_points.obj','wb'))
+        pickle.dump(self.right_manual_points, open('right_manual_points.obj', 'wb'))
+        print('Selected points are:')
+        left_points = list(map(lambda x: [x[0], x[1]], self.left_manual_points));
+        right_points = list(map(lambda x: [x[0], x[1]], self.right_manual_points))
+        print(left_points)
+        print(right_points)
 
     def append_points(self, event, x, y, flags, param):
         """
@@ -325,14 +429,29 @@ class Reconstruct:
                 cv.line(self.image,self.roiCoordinates[self.count-1],(int(x), int(y)),[0,255,0],3)
             self.count +=1
 
-    def getROIFromUser(self, type = 'No'):
+    def append_points_3d(self, event, x, y, flags, param):
         """
-        [This function is responsible for taking the regions of interests from the user for all the 4 pictures in order]
+        [This function is called every time the mouse left button is clicked - It records the (x,y) coordinates of the click location]
+
+        """
+        print('3D point')
+        if event == cv.EVENT_LBUTTONDOWN:
+            self.roiCoordinates_3d.append((int(x), int(y)))
+            if self.count % 2 == 0:
+                cv.circle(self.image,(int(x), int(y)),5,[0,255,255],3)
+            else:
+                cv.circle(self.image, (int(x), int(y)), 5, [0, 255, 255], 3)
+                cv.line(self.image,self.roiCoordinates_3d[self.count-1],(int(x), int(y)),[0,255,0],3)
+            self.count +=1
+
+    def getROIFromUser(self, type = 'No', type2='No'):
+        """
+        [This function is responsible for taking the regions of interests from the user]
 
         """
         if type == 'yes':
             self.roiCoordinates = pickle.load(open('points.obj','rb'))
-        else:
+        elif type =='No':
             self.roiList = []
             cv.namedWindow('Select ROI')
             cv.setMouseCallback('Select ROI', self.append_points)
@@ -345,7 +464,26 @@ class Reconstruct:
             pickle.dump(self.roiCoordinates,open('points.obj','wb'))
             cv.imwrite('result_1.jpg',self.image)
 
+        # if type2 == 'yes':
+        #     self.roiCoordinates_3d = pickle.load(open('points3d.obj','rb'))
+        # elif type2 == 'No':
+        #     print('here')
+        #     cv.namedWindow('3D ROI')
+        #     cv.setMouseCallback('3D ROI', self.append_points_3d)
+        #     self.image_3d = np.hstack((self.image_pair[0],self.image_pair[1]))
+        #     while(True):
+        #         cv.imshow('Select ROI', self.image_3d)
+        #         k = cv.waitKey(1) & 0xFF
+        #         if cv.waitKey(1) & 0xFF == ord('q'):
+        #             break
+        #     pickle.dump(self.roiCoordinates_3d, open('points3d.obj', 'wb'))
+        #     cv.imwrite('3d_points.jpg', self.image)
+
 
 if __name__ == "__main__":
+    """
+    Code starts here
+    
+    """
     tester = Reconstruct(['Task2_Images/Left.jpg','Task2_Images/Right.jpg'])
     tester.schedule()
