@@ -31,6 +31,7 @@ class Reconstruct:
         self.left_manual_points = list()
         self.right_manual_points = list()
         self.count = 0
+        self.padding = int(31 / 2)
         self.parameter_dict = dict()
         for image_path_index in tqdm(range(len(image_paths)), desc='Image Load'):
             file = cv.imread(image_paths[image_path_index])
@@ -44,7 +45,7 @@ class Reconstruct:
     def schedule(self):
         #1Get interest points from user
         print('hello')
-        self.getROIFromUser()
+        self.getROIFromUser(type='yes')
         #2Process the points: Segregate them based on the left and right images
         self.process_points()
         #3Perform stereo rectification
@@ -98,26 +99,92 @@ class Reconstruct:
         print("----------------------------")
         print("Individual rectification complete")
         print("----------------------------")
+        F = np.matmul(np.linalg.pinv(self.parameter_dict['Rectified_Params1'][1].T), self.parameter_dict['F_beta']);
+        F = np.matmul(F, np.linalg.inv(self.parameter_dict['Rectified_Params0'][1]))
+        tp_1 = list(map(lambda x: [x[1], x[0], 1], self.left_manual_points));
+        point_one = np.matmul(H1, np.array(tp_1).T)
+        point_one /= point_one[2]
+        point_one = point_one.T
+        point_one = np.array(list(map(lambda x: [x[1], x[0], x[2]], point_one)))
+        tp_2 = list(map(lambda x: [x[1], x[0], 1], self.right_manual_points))
+        point_two = np.matmul(H2, np.array(tp_2).T)
+        point_two /= point_two[2]
+        point_two = point_two.T
+        point_two = np.array(list(map(lambda x: [x[1], x[0], x[2]], point_two)))
+        rectification = np.hstack((self.parameter_dict['Rectified_Params0'][0], self.parameter_dict['Rectified_Params1'][0]))
+        for i in range(len(point_one)):
+            cv.line(rectification, (int(point_one[i, 0]), int(point_one[i, 1])),
+                     (int(point_two[i, 0]) + self.image_specs[0][1], int(point_two[i, 1])),
+                     color=(0, 0, 255), thickness=2)
+        cv.imwrite('Rectification.jpg', rectification)
+        # return [rect_img1, rect_img2, F, point_one, point_two, H1, H2, P_dash]
+        self.parameter_dict['P_dash_value'] = P_dash_value
 
     def rectify_image(self):
 
-        for index, element in self.parameter_dict['H1&H2']:
+        for index, element in enumerate(self.parameter_dict['H1&H2']):
             correlation = self.get_correlation(index,element)
-            values = [min(correlation[0]), min(correlation[1]),max(correlation[0]), max(correlation[1])]
+            values = [[min(correlation[0]), min(correlation[1])],[max(correlation[0]), max(correlation[1])]]
             d_im = np.array(values[1]) - np.array(values[0])
             d_im = [int(d_im[0]), int(d_im[1])]
             scale = np.array([[self.image_specs[index][1] / d_im[0], 0, 0], [0, self.image_specs[index][0] / d_im[1], 0], [0, 0, 1]])
+            print(element.shape)
             H = np.matmul(scale, element)
             correlation = self.get_correlation(index,H)
             values_2 = [min(correlation[0]), min(correlation[1])]
             d_im = values_2
             d_im = [int(d_im[0]), int(d_im[1])]
-            T_value = np.array([[1, 0, -1 * d_im[0] + 1], [0, 1, -1 * d_im[1] + 1], [0, 0, 1]])
+            T_value = np.array([[1, 0, -1 * d_im[0] + 1], [0, 1, -1 * d_im[1] + 1], [0, 0, 1]], dtype=float)
             homography_n = np.matmul(T_value, H)
             inverse_homography = np.linalg.pinv(homography_n)
             result_image = self.create_image(index=index,H=inverse_homography)
             self.parameter_dict['Rectified_Params'+str(index)] = [result_image, homography_n]
 
+    def ncc(self, corners_left, corners_right, image_left, image_right):
+
+        corners_left = self.parameter_dict['corners_right']
+        corners_right = self.parameter_dict['corners_right']
+        image_left = self.image_pair[0]
+        image_right = self.image_pair[1]
+        ncc = np.zeros((len(corners_left), len(corners_right)))
+        ncc = ncc - 2
+        for row in range(len(corners_left)):
+            for column in range(len(corners_right)):
+                cor1 = corners_left[row];
+                cor2 = corners_right[column]
+                x_left_one = max(0, cor1[0] - self.padding)
+                x_right_one = min(cor1[0] + self.padding + 1, image_left.shape[0])
+                y_left_one = max(0, cor1[1] - self.padding)
+                y_right_one = min(cor1[1] + self.padding + 1, image_left.shape[1])
+                x_left_two = max(0, cor2[0] - self.padding)
+                x_right_two = min(cor2[0] + self.padding + 1, image_right.shape[0])
+                y_left_one = max(0, cor2[1] - self.padding)
+                y_right_one = min(cor2[1] + self.padding + 1, image_right.shape[1])
+                if x_right_one - x_left_one == x_right_two - x_left_two and y_right_one - y_left_one == y_right_one - y_left_one:
+                    mean_value_one = np.mean(image_left[x_left_one:x_right_one, y_left_one:y_right_one])
+                    mean_value_two = np.mean(image_right[x_left_two:x_right_two, y_left_one:y_right_one])
+                    term_value_one = np.subtract(image_left[x_left_one:x_right_one, y_left_one:y_right_one], mean_value_one)
+                    term_value_right = np.subtract(image_right[x_left_two:x_right_two, y_left_one:y_right_one], mean_value_two)
+                    ncc[row, column] = np.divide(np.sum(np.multiply(term_value_one, term_value_right)),
+                                                np.sqrt(
+                                                    np.multiply(np.sum(np.square(term_value_one)), np.sum(np.square(term_value_right)))))
+
+        to_ret = []
+        nccs = []
+        track = np.ones(len(corners_right))
+        for row in range(len(ncc)):
+            cur = ncc[row]
+            to_find = cur[cur >= -1]
+            if len(to_find) > 0:
+                column = np.argmax(to_find)
+                if abs(corners_left[row][0] - corners_right[column][0]) < 30 and abs(corners_left[row][1] - corners_right[column][1]) < 60 and track[
+                    column] == 1:  # and max(to_find) > 0.45:
+                    if track[column] == 1 and max(to_find) > 0.6:
+                        nccs.append(max(to_find))
+                        to_ret.append([corners_left[row], corners_right[column]])
+                        track[column] = 0
+        # sorted_idx = np.argsort(nccs)
+        return (to_ret, nccs)
 
     def create_image(self, index, H):
         result_image = np.zeros((self.image_specs[index][0], self.image_specs[index][1], 3))
@@ -147,7 +214,6 @@ class Reconstruct:
         ,
         axis=1)
 
-
     def get_updated_center(self, homography):
         center = np.matmul(homography,self.reference_center.T)
         return center/center[2]
@@ -162,7 +228,7 @@ class Reconstruct:
             H = np.matmul(np.matmul(G_value,R_value),T_value)
             assert H.shape == (3,3)
             return H
-        elif type == ' H1':
+        elif type == 'H1':
             theta_value = self.get_theta(e_one=e_one,e_two=e_two,image_index=0, type='1')
             F_value = (np.cos(theta_value) * (e_one[0] - self.image_specs[0][1] / 2.0) - np.sin(theta_value) * (e_one[1] - self.image_specs[0][0] / 2.0))[0]
             R_value = np.array([[np.cos(theta_value)[0], -1 * np.sin(theta_value)[0], 0], [np.sin(theta_value)[0], np.cos(theta_value)[0], 0], [0, 0, 1]])
@@ -170,6 +236,7 @@ class Reconstruct:
             G_value = np.array([[1, 0, 0], [0, 1, 0], [-1.0 / F_value, 0, 1]])
             H = np.matmul(np.matmul(G_value,R_value),T_value)
             assert H.shape == (3,3)
+            print('Returning H1')
             return H
 
 
@@ -228,24 +295,25 @@ class Reconstruct:
                 cv.line(self.image,self.roiCoordinates[self.count-1],(int(x), int(y)),[0,255,0],3)
             self.count +=1
 
-    def getROIFromUser(self):
+    def getROIFromUser(self, type = 'No'):
         """
         [This function is responsible for taking the regions of interests from the user for all the 4 pictures in order]
 
         """
-        self.roiList = []
-        print('sd')
-        cv.namedWindow('Select ROI')
-        print('named')
-        cv.setMouseCallback('Select ROI', self.append_points)
-        self.image = np.hstack((self.image_pair[0],self.image_pair[1]))
-        print('e')
-        while(True):
-            cv.imshow('Select ROI', self.image)
-            k = cv.waitKey(1) & 0xFF
-            if cv.waitKey(1) & 0xFF == ord('q'):
-                break
-        cv.imwrite('result_1.jpg',self.image)
+        if type == 'yes':
+            self.roiCoordinates = pickle.load(open('points.obj','rb'))
+        else:
+            self.roiList = []
+            cv.namedWindow('Select ROI')
+            cv.setMouseCallback('Select ROI', self.append_points)
+            self.image = np.hstack((self.image_pair[0],self.image_pair[1]))
+            while(True):
+                cv.imshow('Select ROI', self.image)
+                k = cv.waitKey(1) & 0xFF
+                if cv.waitKey(1) & 0xFF == ord('q'):
+                    break
+            pickle.dump(self.roiCoordinates,open('points.obj','wb'))
+            cv.imwrite('result_1.jpg',self.image)
 
 
 if __name__ == "__main__":
