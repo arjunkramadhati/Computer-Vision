@@ -25,6 +25,7 @@ class Reconstruct:
 
     def __init__(self, image_paths):
         self.image_pair = list()
+        self.grey_image_pair = list()
         self.roiList = list()
         self.roiCoordinates = list()
         self.image_specs = list()
@@ -36,6 +37,7 @@ class Reconstruct:
         for image_path_index in tqdm(range(len(image_paths)), desc='Image Load'):
             file = cv.imread(image_paths[image_path_index])
             self.image_pair.append(file)
+            self.grey_image_pair.append(cv.cvtColor(file, cv.COLOR_BGR2GRAY))
             self.image_specs.append(file.shape)
         self.reference_center = np.array([[self.image_specs[0][1] / 2.0, self.image_specs[0][0] / 2.0, 1]])
         print("----------------------------")
@@ -140,8 +142,7 @@ class Reconstruct:
             result_image = self.create_image(index=index,H=inverse_homography)
             self.parameter_dict['Rectified_Params'+str(index)] = [result_image, homography_n]
 
-    def ncc(self, corners_left, corners_right, image_left, image_right):
-
+    def ncc(self):
         corners_left = self.parameter_dict['corners_right']
         corners_right = self.parameter_dict['corners_right']
         image_left = self.image_pair[0]
@@ -185,6 +186,35 @@ class Reconstruct:
                         track[column] = 0
         # sorted_idx = np.argsort(nccs)
         return (to_ret, nccs)
+
+    def get_corners(self):
+        edge_left = cv.Canny(self.grey_image_pair[0],25581.5,255)
+        edge_right = cv.Canny(self.grey_image_pair[1],255*1.5,255)
+        edge_left,edge_right = self.filter_edges([edge_left,edge_right])
+        cv.imwrite('edges_left_image.jpg',edge_left)
+        cv.imwrite('edges_right_image.jpg', edge_right)
+        corners = list()
+        for image in self.grey_image_pair:
+            corner_list = list()
+            count=0
+            for row in range(image.shape[0]):
+                for column in range(image.shape[1]):
+                    if image[row, column] != 0:
+                        count+=1
+                        if count % 12 == 0:
+                            corner_list.append([row,column])
+            corners.append(corner_list)
+        self.parameter_dict['corners_list_all'] = corners
+
+    def filter_edges(self, edge_list):
+        temp = []
+        for element in edge_list:
+            for row in range(element.shape[0]):
+                for column in range(element.shape[1]):
+                    if column < 40 or column > 350 or row < 100:
+                        element[row, column] = 0
+            temp.append(element)
+        return temp
 
     def create_image(self, index, H):
         result_image = np.zeros((self.image_specs[index][0], self.image_specs[index][1], 3))
