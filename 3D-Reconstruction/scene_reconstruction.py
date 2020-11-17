@@ -23,12 +23,14 @@ from PIL import Image,ImageFont,ImageDraw
 
 class Reconstruct:
 
-    def __init__(self, image_paths):
+    def __init__(self, image_paths, second_task_path):
         """
         Initialize the object
         :param image_paths: Path to the two images
         """
         self.image_pair = list()
+        self.occ_images = list()
+        self.occ_grey = list()
         self.grey_image_pair = list()
         self.roiList = list()
         self.roiCoordinates = list()
@@ -46,6 +48,10 @@ class Reconstruct:
             self.grey_image_pair.append(cv.cvtColor(file, cv.COLOR_BGR2GRAY))
             self.image_specs.append(file.shape)
         self.reference_center = np.array([[self.image_specs[0][1] / 2.0, self.image_specs[0][0] / 2.0, 1]])
+        for path in second_task_path:
+            file = cv.imread(path)
+            self.occ_images.append(file)
+            self.occ_grey.append(cv.cvtColor(file,cv.COLOR_BGR2GRAY))
         print("----------------------------")
         print("Initialization complete")
         print("----------------------------")
@@ -479,11 +485,67 @@ class Reconstruct:
         #     pickle.dump(self.roiCoordinates_3d, open('points3d.obj', 'wb'))
         #     cv.imwrite('3d_points.jpg', self.image)
 
+    def get_sliding_window(self, image, column, row):
+        return image[column-2:column+3, row-2:row+3]
+
+    def get_bit_vector(self,M_value, image, column, row):
+        bitvector = list()
+        slidingwindow = self.get_sliding_window(image=image, column=column, row=row)
+        for row_slide in range(M_value):
+            for column_slide in range(M_value):
+                if slidingwindow[row_slide, column_slide] > image[column,row]:
+                    bitvector.append(1)
+                elif slidingwindow[row_slide, column_slide] <= image[column,row]:
+                    bitvector.append(0)
+        bitvector = np.asarray(bitvector)
+        return bitvector
+
+    def estimate_error_mask(self):
+        result_disparity_map = self.parameter_dict['Disparity Map']
+        mask = self.occ_grey[1]
+        mask_E = np.zeros((result_disparity_map.shape))
+        total = 0
+        count_correct = 0
+        for row in range(result_disparity_map.shape[1]):
+            for column in range(result_disparity_map.shape[0]):
+                if mask[column, row] == 0:
+                    pass
+                total = total + 1
+                if np.absolute(result_disparity_map[column, row] - self.occ_grey[0][column, row]) <= 1.5:
+                    count_correct = count_correct + 1
+                    mask_E[column, row] = 255
+        cv.imwrite("error_mask.jpg", mask_E)
+        print('Accuracy is', count_correct / total * 100)
+        print('Completed error mask estimation')
+
+    def estimate_disparity_maps(self, M_value, Max_D):
+        result_disparity_map = np.zeros((self.image_specs[0]))
+        for row in range(self.image_specs[0][1]):
+            for column in range(self.image_specs[0][0]):
+                bitvector_left = self.get_bit_vector(M_value=M_value,image = self.grey_image_pair[0], column=column, row=row)
+                lower_cutoff = 255
+                for d_value in range(Max_D):
+                    if row - d_value < 0:
+                        break
+                    right_bv = self.get_bit_vector(M_value=M_value,image = self.grey_image_pair[1], column=column, row = row - d_value)
+                    value = (np.bitwise_xor(bitvector_left, right_bv)).sum(-1)
+                    if value < lower_cutoff:
+                        final_d = d_value
+                        lower_cutoff = value
+                result_disparity_map[column, row] = final_d
+        cv.imwrite("disparity_map.jpg", result_disparity_map)
+        self.parameter_dict['Disparity Map'] = result_disparity_map
+        print('Disparity map created and saved.')
+
 
 if __name__ == "__main__":
     """
     Code starts here
     
     """
-    tester = Reconstruct(['Task2_Images/Left.jpg','Task2_Images/Right.jpg'])
+    tester = Reconstruct(['Task2_Images/Left.jpg','Task2_Images/Right.jpg'],['Task2_Images/left_truedisp.pgm','Task2_Images/mask0nocc.png'])
     tester.schedule()
+    print('Task 1 complete')
+    tester.estimate_disparity_maps(M_value=3,Max_D=5)
+    tester.estimate_error_mask()
+    print('Task 2 complete')
