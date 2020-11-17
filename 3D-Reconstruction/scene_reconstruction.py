@@ -123,9 +123,9 @@ class Reconstruct:
         print("----------------------------")
         print("Individual rectification complete")
         print("----------------------------")
-        F = np.matmul(np.linalg.pinv(self.parameter_dict['Rectified_Params1'][1].T), self.parameter_dict['F_beta']);
+        F = np.matmul(np.linalg.pinv(self.parameter_dict['Rectified_Params1'][1].T), self.parameter_dict['F_beta'])
         F = np.matmul(F, np.linalg.inv(self.parameter_dict['Rectified_Params0'][1]))
-        tp_1 = list(map(lambda x: [x[1], x[0], 1], self.left_manual_points));
+        tp_1 = list(map(lambda x: [x[1], x[0], 1], self.left_manual_points))
         point_one = np.matmul(H1, np.array(tp_1).T)
         point_one /= point_one[2]
         point_one = point_one.T
@@ -183,7 +183,7 @@ class Reconstruct:
         ncc = ncc - 2
         for row in range(len(corners_left)):
             for column in range(len(corners_right)):
-                cor1 = corners_left[row];
+                cor1 = corners_left[row]
                 cor2 = corners_right[column]
                 x_left_one = max(0, cor1[0] - self.padding)
                 x_right_one = min(cor1[0] + self.padding + 1, image_left.shape[0])
@@ -415,7 +415,7 @@ class Reconstruct:
         pickle.dump(self.left_manual_points,open('left_manual_points.obj','wb'))
         pickle.dump(self.right_manual_points, open('right_manual_points.obj', 'wb'))
         print('Selected points are:')
-        left_points = list(map(lambda x: [x[0], x[1]], self.left_manual_points));
+        left_points = list(map(lambda x: [x[0], x[1]], self.left_manual_points))
         right_points = list(map(lambda x: [x[0], x[1]], self.right_manual_points))
         print(left_points)
         print(right_points)
@@ -595,8 +595,8 @@ class Reconstruct:
 
     def condition_F(self,F):
         F = F.flatten()
-        F = F / F[-1];
-        F = F[:-1];
+        F = F / F[-1]
+        F = F[:-1]
         F = F.reshape(8, 1)
         return F
 
@@ -620,7 +620,7 @@ class Reconstruct:
             [[0, -1 * e_two[2], e_two[1]], [e_two[2], 0, -1 * e_two[0]],
              [-1 * e_two[1], e_two[0], 0]])
         P_dash_updated = np.matmul(e_two_1, F)
-        P_dash_updated = np.append(P_dash_updated, np.array([e_two[0], e_two[1], e_two[2]]), axis=1);
+        P_dash_updated = np.append(P_dash_updated, np.array([e_two[0], e_two[1], e_two[2]]), axis=1)
         self.parameter_dict['F_updated'] = F
         self.parameter_dict['P_dash_updated'] = P_dash_updated
         print('Optimization complete')
