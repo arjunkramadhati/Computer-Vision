@@ -8,17 +8,14 @@ Date: Oct 19, 2020
 [TO RUN CODE]: python3 scene_reconstruction.py
 """
 
-import re
-import glob
+
 import pickle
 import cv2 as cv
 import numpy as np
 from tqdm import tqdm
 from scipy.linalg import null_space
-from sklearn import svm
-from scipy import signal
-from sklearn.model_selection import train_test_split
-from PIL import Image,ImageFont,ImageDraw
+from scipy import optimize
+import matplotlib.pyplot as plt
 
 
 class Reconstruct:
@@ -67,9 +64,11 @@ class Reconstruct:
         self.process_points()
         #3Perform stereo rectification
         self.process_rectification()
-        #4Extract corners
+        #4Optimize
+        self.levenberg_marquardt_optimization()
+        #5Extract corners
         self.extract_corners()
-        #5Corresponding matching
+        #6Corresponding matching
         self.get_closest_match()
 
     def process_rectification(self):
@@ -142,7 +141,6 @@ class Reconstruct:
                      (int(point_two[i, 0]) + self.image_specs[0][1], int(point_two[i, 1])),
                      color=(0, 0, 255), thickness=2)
         cv.imwrite('Rectification.jpg', rectification)
-        # return [rect_img1, rect_img2, F, point_one, point_two, H1, H2, P_dash]
         self.parameter_dict['P_dash_value'] = P_dash_value
         print("Rectification complete")
 
@@ -208,8 +206,8 @@ class Reconstruct:
         neighbors = list()
         index_list = np.ones(len(corners_right))
         for row in range(len(ncc)):
-            cur = ncc[row]
-            value = cur[cur >= -1]
+            current_value = ncc[row]
+            value = current_value[current_value >= -1]
             if len(value) > 0:
                 column = np.argmax(value)
                 if abs(corners_left[row][0] - corners_right[column][0]) < 30 and abs(corners_left[row][1] - corners_right[column][1]) < 60 and index_list[
@@ -219,7 +217,8 @@ class Reconstruct:
                         rectify.append([corners_left[row], corners_right[column]])
                         index_list[column] = 0
         print('Returning closest match')
-        return (rectify, neighbors)
+        self.parameter_dict['Correspondence']=rectify
+        self.parameter_dict['neighbors'] = neighbors
 
     def extract_corners(self):
         """
@@ -229,15 +228,15 @@ class Reconstruct:
         edge_left = cv.Canny(self.grey_image_pair[0],25581.5,255)
         edge_right = cv.Canny(self.grey_image_pair[1],255*1.5,255)
         edge_list = [edge_left,edge_right]
-        temp = []
+        temp_list = []
         for element in edge_list:
             for row in range(element.shape[0]):
                 for column in range(element.shape[1]):
                     if column < 40 or column > 350 or row < 100:
                         element[row, column] = 0
-            temp.append(element)
-        edge_left = temp[0]
-        edge_right =temp[1]
+            temp_list.append(element)
+        edge_left = temp_list[0]
+        edge_right =temp_list[1]
         cv.imwrite('edges_left_image.jpg',edge_left)
         cv.imwrite('edges_right_image.jpg', edge_right)
         corners = list()
@@ -485,10 +484,28 @@ class Reconstruct:
         #     pickle.dump(self.roiCoordinates_3d, open('points3d.obj', 'wb'))
         #     cv.imwrite('3d_points.jpg', self.image)
 
-    def get_sliding_window(self, image, column, row):
-        return image[column-2:column+3, row-2:row+3]
+    def get_sliding_window(self, image, column, row, left = 2, right = 3):
+        """
+        Get the sliding window to estimate the bitvector
+        for each pixel.
+        :param image: Image under consideration
+        :param column: column value of the pixel coordinate
+        :param row: row value of the pixel coordinate
+        :param left: Left padding
+        :param right: Right padding
+        :return: Window image
+        """
+        return image[column-left:column+right, row-left:row+right]
 
     def get_bit_vector(self,M_value, image, column, row):
+        """
+        Function to estimate the bit vector for the given window over
+        the given center pixel
+        :param image: Image under consideration
+        :param column: Column value of the pixel coordinate
+        :param row: Row value of the pixel coordinate
+        :return: Bitvector in list type
+        """
         bitvector = list()
         slidingwindow = self.get_sliding_window(image=image, column=column, row=row)
         for row_slide in range(M_value):
@@ -501,6 +518,10 @@ class Reconstruct:
         return bitvector
 
     def estimate_error_mask(self):
+        """
+        Estimate the error mask
+        :return:
+        """
         result_disparity_map = self.parameter_dict['Disparity Map']
         mask = self.occ_grey[1]
         mask_E = np.zeros((result_disparity_map.shape))
@@ -519,6 +540,12 @@ class Reconstruct:
         print('Completed error mask estimation')
 
     def estimate_disparity_maps(self, M_value, Max_D):
+        """
+        Create and save the disparity map.
+        :param M_value: M value
+        :param Max_D: Dmax value
+        :return:
+        """
         result_disparity_map = np.zeros((self.image_specs[0]))
         for row in range(self.image_specs[0][1]):
             for column in range(self.image_specs[0][0]):
@@ -537,6 +564,66 @@ class Reconstruct:
         self.parameter_dict['Disparity Map'] = result_disparity_map
         print('Disparity map created and saved.')
 
+    def cost(self, F, c_one, c_two):
+        """
+        Cost function for the LM optimization
+        :param F: Initial F estimation
+        :param c_one: Point list one
+        :param c_two: Point list two
+        :return: Cost estimate
+        """
+        F = F.flatten()
+        matches = list()
+        F = np.append(F, 1).reshape(3, 3)
+        e_two = null_space(F.T)
+        e_two =e_two/ e_two[2]
+        e_two_1 = np.array([[0, -1 * e_two[2], e_two[1]], [e_two[2], 0, -1 * e_two[0]],
+                         [-1 * e_two[1], e_two[0], 0]])
+        P_value_two = np.matmul(e_two_1, F)
+        P_value_two = np.append(P_value_two, np.array([e_two[0], e_two[1], e_two[2]]), axis=1)
+        for point_index in range(len(c_one[0])):
+            matches.append([[c_one[0, point_index], c_one[1, point_index]], [c_two[0, point_index], c_two[1, point_index]]])
+        world_pts = self.triangulate_world_points(matches, P_value_two)
+        world_pts = np.array(world_pts).T
+        P_value_one = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]])
+        projection_one = np.matmul(P_value_one, world_pts)
+        projection_one = projection_one/projection_one[2]
+        projection_two = np.matmul(P_value_two, world_pts)
+        projection_two =projection_two / projection_two[2]
+        cost = np.append(projection_one[:2] - c_one[:2], projection_two[:2] - c_two[:2])
+        return cost
+
+    def condition_F(self,F):
+        F = F.flatten()
+        F = F / F[-1];
+        F = F[:-1];
+        F = F.reshape(8, 1)
+        return F
+
+    def levenberg_marquardt_optimization(self):
+        """
+        Function to improve our F estimation using LM optimization
+        :return:
+        """
+        c_one,c_two = list(),list()
+        for i in range(len(self.parameter_dict['Correspondence'])):
+            c_one.append([self.parameter_dict['Correspondence'][i][0][0], self.parameter_dict['Correspondence'][i][0][1], 1])
+            c_two.append([self.parameter_dict['Correspondence'][i][1][0], self.parameter_dict['Correspondence'][i][1][1], 1])
+        c_one = np.array(c_one).T
+        c_two = np.array(c_two).T
+        F = self.condition_F(self.parameter_dict['F_beta'])
+        updated_value = optimize.leastsq(self.cost, F, args=(c_one, c_two))
+        F = np.append(updated_value[0], 1).reshape(3, 3)
+        e_two = null_space(F.T)
+        e_two =e_two/ e_two[2]
+        e_two_1 = np.array(
+            [[0, -1 * e_two[2], e_two[1]], [e_two[2], 0, -1 * e_two[0]],
+             [-1 * e_two[1], e_two[0], 0]])
+        P_dash_updated = np.matmul(e_two_1, F)
+        P_dash_updated = np.append(P_dash_updated, np.array([e_two[0], e_two[1], e_two[2]]), axis=1);
+        self.parameter_dict['F_updated'] = F
+        self.parameter_dict['P_dash_updated'] = P_dash_updated
+        print('Optimization complete')
 
 if __name__ == "__main__":
     """
