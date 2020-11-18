@@ -4,7 +4,7 @@ Computer Vision - Purdue University - Homework 10
 Author : Arjun Kramadhati Gopi, MS-Computer & Information Technology, Purdue University.
 Date: Oct 19, 2020
 
-
+Reference : https://github.com/rmahfuz/Computer-Vision/tree/master/HW09
 [TO RUN CODE]: python3 scene_reconstruction.py
 """
 
@@ -59,7 +59,7 @@ class Reconstruct:
         :return:
         """
         #1Get interest points from user
-        self.getROIFromUser(type='yes')
+        self.getROIFromUser(type='No',type2='No')
         #2Process the points: Segregate them based on the left and right images
         self.process_points()
         #3Perform stereo rectification
@@ -70,6 +70,42 @@ class Reconstruct:
         self.extract_corners()
         #6Corresponding matching
         self.get_closest_match()
+        #73D reconstruction
+        self.plot_3d()
+
+    def get_world_individual(self, world_points):
+        temp = []
+        for i in range(3):
+            temp.append(np.array(list(map(lambda val: val[i], world_points))))
+        return temp[0],temp[1],temp[2]
+
+    def get_plot(self, worldX,worldY,worldZ):
+        d_plot = plt.figure()
+        plot_world = d_plot.add_subplot(111, projection='3d')
+        plot_world = d_plot.add_subplot(111, projection='3d')
+        plot_world.scatter(worldX[:7], worldY[:7], worldZ[:7], color='k', zdir='y')
+        for i in range(7):
+            plot_world.text(worldX[i], worldZ[i], worldY[i], str(i + 1), zdir='y')
+        plot_world.plot([worldX[0], worldX[1]], [worldY[0], worldY[1]], [worldZ[0], worldZ[1]], color='b', zdir='y')
+        plot_world.plot([worldX[6], worldX[2]], [worldY[6], worldY[2]], [worldZ[6], worldZ[2]], color='b', zdir='y')
+        plot_world.plot([worldX[4], worldX[3]], [worldY[4], worldY[3]], [worldZ[4], worldZ[3]], color='g', zdir='y')
+        plot_world.plot([worldX[0], worldX[6]], [worldY[0], worldY[6]], [worldZ[0], worldZ[6]], color='b', zdir='y')
+        plot_world.plot([worldX[1], worldX[2]], [worldY[1], worldY[2]], [worldZ[1], worldZ[2]], color='b', zdir='y')
+        plot_world.plot([worldX[2], worldX[3]], [worldY[2], worldY[3]], [worldZ[2], worldZ[3]], color='r', zdir='y')
+        plot_world.plot([worldX[6], worldX[4]], [worldY[6], worldY[4]], [worldZ[6], worldZ[4]], color='r', zdir='y')
+        plot_world.plot([worldX[0], worldX[5]], [worldY[0], worldY[5]], [worldZ[0], worldZ[5]], color='r', zdir='y')
+        plot_world.plot([worldX[5], worldX[4]], [worldY[5], worldY[4]], [worldZ[5], worldZ[4]], color='g', zdir='y')
+        plot_world.view_init(None, 30)
+        return plot_world
+
+    def plot_3d(self):
+        world_points = self.triangulate_world_points(self.parameter_dict['corners_all'], self.parameter_dict['P_value_two'])
+        worldX, worldY, worldZ = self.get_world_individual(world_points=world_points)
+        plot_world = self.get_plot(worldX,worldY,worldZ)
+        plot_world.set_xlabel('x')
+        plot_world.set_ylabel('y')
+        plot_world.set_zlabel('z')
+        plt.savefig('3dplot.png')
 
     def process_rectification(self):
         """
@@ -175,13 +211,14 @@ class Reconstruct:
         corresponding pixel in the second image.
         :return: rectified corners and the list of the nearest neighbors
         """
-        corners_left = self.parameter_dict['corners_right']
-        corners_right = self.parameter_dict['corners_right']
+        corners_left = self.parameter_dict['corners_list_all'][0]
+        corners_right = self.parameter_dict['corners_list_all'][1]
         image_left = self.image_pair[0]
         image_right = self.image_pair[1]
         ncc = np.zeros((len(corners_left), len(corners_right)))
         ncc = ncc - 2
         for row in range(len(corners_left)):
+            print(str(row) + " out of "+str(len(corners_left)))
             for column in range(len(corners_right)):
                 cor1 = corners_left[row]
                 cor2 = corners_right[column]
@@ -219,13 +256,18 @@ class Reconstruct:
         print('Returning closest match')
         self.parameter_dict['Correspondence']=rectify
         self.parameter_dict['neighbors'] = neighbors
+        corresp_img = np.hstack((cv.imread('rectified_0.jpg'), cv.imread('rectified_1.jpg')))
+        for i in range(len(rectify)):
+            cv.line(corresp_img, (rectify[i][0][1], rectify[i][0][0]),
+                (rectify[i][1][1]+self.image_specs[0][1], rectify[i][1][0]), color = (0,0,255), thickness = 1)
+        cv.imwrite('corresps.jpg', corresp_img)
 
     def extract_corners(self):
         """
         Extract the corners from the images using Canny edge detector
         :return: Stores list of the corner coordinates.
         """
-        edge_left = cv.Canny(self.grey_image_pair[0],25581.5,255)
+        edge_left = cv.Canny(self.grey_image_pair[0],255*1.5,255)
         edge_right = cv.Canny(self.grey_image_pair[1],255*1.5,255)
         edge_list = [edge_left,edge_right]
         temp_list = []
@@ -251,6 +293,12 @@ class Reconstruct:
                             corner_list.append([row,column])
             corners.append(corner_list)
         self.parameter_dict['corners_list_all'] = corners
+        self.image_res = np.hstack((self.image_pair[0], self.image_pair[1]))
+        # for index,point in enumerate(corners[0]):
+        #     ptx=(point[0],point[1])
+        #     ptx2=(corners[1][index][0],corners[1][index][1])
+        #     cv.line(self.image_res,ptx,ptx2,[255,255,0],3)
+
         print('Corner extraction complete')
 
     def create_image(self, index, H):
@@ -415,8 +463,8 @@ class Reconstruct:
         pickle.dump(self.left_manual_points,open('left_manual_points.obj','wb'))
         pickle.dump(self.right_manual_points, open('right_manual_points.obj', 'wb'))
         print('Selected points are:')
-        left_points = list(map(lambda x: [x[0], x[1]], self.left_manual_points))
-        right_points = list(map(lambda x: [x[0], x[1]], self.right_manual_points))
+        left_points = list(map(lambda x: [x[1], x[0]], self.left_manual_points))
+        right_points = list(map(lambda x: [x[1], x[0]], self.right_manual_points))
         print(left_points)
         print(right_points)
 
@@ -425,12 +473,21 @@ class Reconstruct:
         [This function is called every time the mouse left button is clicked - It records the (x,y) coordinates of the click location]
 
         """
+        lit = ['a','a','b','a','c','a','d','a','e','a','f','a','g','a','h','a','i','a']
         if event == cv.EVENT_LBUTTONDOWN:
             self.roiCoordinates.append((int(x), int(y)))
             if self.count % 2 == 0:
                 cv.circle(self.image,(int(x), int(y)),5,[0,255,255],3)
+                cv.putText(self.image,lit[self.count],(int(x+3), int(y-2)),cv.FONT_HERSHEY_COMPLEX,
+                           1,[0,255,255])
+                # cv.putText(self.image, str(self.count), cv.Point(30, 30),
+                #         cv.FONT_HERSHEY_COMPLEX_SMALL, 0.8, cv.Scalar(200, 200, 250), 1)
             else:
                 cv.circle(self.image, (int(x), int(y)), 5, [0, 255, 255], 3)
+                # cv.putText(self.image,lit[self.count],(int(x+3), int(y-2)),cv.FONT_HERSHEY_COMPLEX,
+                #            1,[0,255,255])
+                # cv.putText(self.image, str(self.count), cv.Point(30, 30),
+                #            cv.FONT_HERSHEY_COMPLEX_SMALL, 0.8, cv.Scalar(200, 200, 250), 1)
                 cv.line(self.image,self.roiCoordinates[self.count-1],(int(x), int(y)),[0,255,0],3)
             self.count +=1
 
@@ -469,20 +526,20 @@ class Reconstruct:
             pickle.dump(self.roiCoordinates,open('points.obj','wb'))
             cv.imwrite('result_1.jpg',self.image)
 
-        if type2 == 'yes':
-            self.roiCoordinates_3d = pickle.load(open('points3d.obj','rb'))
-        elif type2 == 'No':
-            print('here')
-            cv.namedWindow('3D ROI')
-            cv.setMouseCallback('3D ROI', self.append_points_3d)
-            self.image_3d = np.hstack((self.image_pair[0],self.image_pair[1]))
-            while(True):
-                cv.imshow('Select ROI', self.image_3d)
-                k = cv.waitKey(1) & 0xFF
-                if cv.waitKey(1) & 0xFF == ord('q'):
-                    break
-            pickle.dump(self.roiCoordinates_3d, open('points3d.obj', 'wb'))
-            cv.imwrite('3d_points.jpg', self.image)
+        # if type2 == 'yes':
+        #     self.roiCoordinates_3d = pickle.load(open('points3d.obj','rb'))
+        # elif type2 == 'No':
+        #     print('here')
+        #     cv.namedWindow('3D ROI')
+        #     cv.setMouseCallback('3D ROI', self.append_points_3d)
+        #     self.image_3d = np.hstack((self.image_pair[0],self.image_pair[1]))
+        #     while(True):
+        #         cv.imshow('Select ROI', self.image_3d)
+        #         k = cv.waitKey(1) & 0xFF
+        #         if cv.waitKey(1) & 0xFF == ord('q'):
+        #             break
+        #     pickle.dump(self.roiCoordinates_3d, open('points3d.obj', 'wb'))
+        #     cv.imwrite('3d_points.jpg', self.image)
 
     def get_sliding_window(self, image, column, row, left = 2, right = 3):
         """
