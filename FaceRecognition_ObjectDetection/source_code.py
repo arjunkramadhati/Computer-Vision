@@ -17,6 +17,7 @@ import pickle
 import cv2 as cv
 import numpy as np
 from tqdm import tqdm
+from scipy import spatial
 from scipy.linalg import null_space
 from scipy import optimize
 import matplotlib.pyplot as plt
@@ -53,6 +54,20 @@ class FaceRecognition:
             W_matrix[:, column] = W_matrix[:, column]/np.linalg.norm(W_matrix[:, column])
         return W_matrix, W_matrix[:, :component]
 
+    def get_minimum_distance(self, distance):
+        return np.argmin(distance)
+
+    def get_accuracy(self,test, train):
+        accuracy = [0]*self.parameter_dict['Classes']
+        for column in range(test.shape[1]):
+            distance = list()
+            for row in range(train.shape[1]):
+                distance.append(spatial.distance.euclidean(test[:,column],train[:,row]))
+            minimum = self.get_minimum_distance(distance=distance)
+            if int(minimum/self.parameter_dict['Samples']) == column:
+                accuracy[column] +=1
+        return accuracy
+
     def get_pca_performance(self):
         for component in tqdm(range(self.parameter_dict['PrincipleComponents']), desc='Component Analysis'):
             array_images = list()
@@ -61,7 +76,6 @@ class FaceRecognition:
             assert len(array_images) == 630
             array_images = np.array(array_images, dtype=np.float32)
             mean_value = self.get_image_mean(images=array_images)
-            print(mean_value)
             VectorX = self.construct_X(images=array_images, mean=mean_value)
             eigen_vector = self.get_eigen_vectors(VectorX=VectorX)
             W_matrix, largest_value = self.construct_W(VectorX=VectorX, eigen_vector=eigen_vector, component=component)
@@ -70,6 +84,18 @@ class FaceRecognition:
             for image_name in self.testing_path:
                 array_images.append(cv.cvtColor(cv.imread(self.paths[0]+'/'+image_name), cv.COLOR_BGR2GRAY).flatten())
             assert len(array_images) == 630
+            array_images = np.array(array_images, dtype=np.float32)
+            ################################
+            #Check this area for results
+            ################################
+            mean_value = self.get_image_mean(images=array_images)
+            VectorX = self.construct_X(images=array_images,mean=mean_value)
+            testing_y = np.matmul(largest_value.T, VectorX)
+            accuracy = self.get_accuracy(test=testing_y, train=training_y)
+            print(accuracy)
+
+
+
 
 
 
