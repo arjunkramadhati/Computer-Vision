@@ -38,25 +38,38 @@ class FaceRecognition:
         return np.mean(images, axis=0)
 
     def get_eigen_vectors(self, VectorX):
-        w_value, v_value = np.linalg.eig(np.matmul(VectorX.T, VectorX))
-        return ((v_value[np.argsort(w_value)[::-1]]).T).T
+        eigen_value, eigen_vector = np.linalg.eig(np.matmul(VectorX.T, VectorX))
+        return ((eigen_vector[np.argsort(eigen_value)[::-1]]).T).T
 
     def construct_X(self,images, mean):
         VectorX = (images-mean).T
         for column in range(VectorX.shape[1]):
             VectorX[:, column] = VectorX[:, column] / np.linalg.norm(VectorX[:, column])
+        return VectorX
+
+    def construct_W(self, VectorX, eigen_vector, component):
+        W_matrix = np.matmul(VectorX, eigen_vector)
+        for column in range(W_matrix.shape[1]):
+            W_matrix[:, column] = W_matrix[:, column]/np.linalg.norm(W_matrix[:, column])
+        return W_matrix, W_matrix[:, :component]
 
     def get_pca_performance(self):
         for component in tqdm(range(self.parameter_dict['PrincipleComponents']), desc='Component Analysis'):
             array_images = list()
             for image_name in self.training_path:
-                image = cv.cvtColor(cv.imread(self.paths[1]+'/'+image_name), cv.COLOR_BGR2GRAY).flatten()
-                array_images.append(image)
+                array_images.append(cv.cvtColor(cv.imread(self.paths[1]+'/'+image_name), cv.COLOR_BGR2GRAY).flatten())
             assert len(array_images) == 630
             array_images = np.array(array_images, dtype=np.float32)
-            mean_value = self.get_image_mean(array_images=array_images)
-            VectorX = self.construct_X(array_images=array_images, mean=mean_value)
+            mean_value = self.get_image_mean(images=array_images)
+            print(mean_value)
+            VectorX = self.construct_X(images=array_images, mean=mean_value)
             eigen_vector = self.get_eigen_vectors(VectorX=VectorX)
+            W_matrix, largest_value = self.construct_W(VectorX=VectorX, eigen_vector=eigen_vector, component=component)
+            training_y = np.matmul(largest_value.T, VectorX)
+            array_images = list()
+            for image_name in self.testing_path:
+                array_images.append(cv.cvtColor(cv.imread(self.paths[0]+'/'+image_name), cv.COLOR_BGR2GRAY).flatten())
+            assert len(array_images) == 630
 
 
 
