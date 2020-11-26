@@ -95,7 +95,10 @@ class FaceRecognition:
             print(accuracy)
 
 
-
+# class ObjectDetection:
+#
+#     def __init__(self):
+#
 
 
 
