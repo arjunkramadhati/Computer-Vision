@@ -24,9 +24,73 @@ import matplotlib.pyplot as plt
 
 
 class ViolaJonesOD:
+    def __init__(self, folder_locations):
+        self.folders = folder_locations
+
+    def scheduler(self):
+        tester = self.GetFeatures(data_path=[self.folders[0], self.folders[1]],type='train.obj')
+        tester.scheduler()
+        tester = self.GetFeatures(data_path=[self.folders[2], self.folders[3]],type='test.obj')
+        tester.scheduler()
+
+    class getClassifier:
+        class StrongC:
+            index = list()
+            weak_number = 0
+            classifierT = list()
+
+        def get_weight(self, samplesP, samplesN):
+            return np.concatenate((np.ones((1,samplesP))*0.5/samplesP, np.ones((1,samplesN))*0.5/samplesN), axis=1)
+
+        def get_labels(self, samplesP, samplesN):
+            return np.concatenate((np.ones((1,samplesP)), np.zeros((1, samplesN))) , axis=1)
+
+        def sort_WL(self, W, L, vector):
+            sortW = np.tile(W, (len(vector),1))
+            sortL = np.tile(L, (len(vector),1))
+            return sortW, sortL
+
+        def getWeakC(self, vector, positive_samples, negative_samples):
+            cl = list()
+            cl_T = list()
+            alpha_value = list()
+            W = self.get_weight(samplesP=positive_samples, samplesN=negative_samples)
+            L = self.get_labels(samplesP=positive_samples, samplesN=negative_samples)
+            obj = self.StrongC()
+            for number in range(25):
+                W = W/np.sum(W)
+                sortW, sortL = self.sort_WL(W,L, vector)
+
+
+    class AdaBoostTest:
+        def __init__(self, feature_path):
+            self.parameter_dict = dict()
+            self.feature_path = feature_path
+            file = open(feature_path, 'rb')
+            file_value = pickle.load(file)
+            self.positive = file_value[0]
+            self.negative = file_value[1]
+            file.close()
+
+        def scheduler(self):
+            self.process_data()
+
+        def process_data(self):
+            self.parameter_dict['Positives'] = self.positive.shape[1]
+            self.parameter_dict['Negatives'] = self.negative.shape[1]
+            self.parameter_dict['Negatives_WHL'] = self.parameter_dict['Negatives']
+            print('Positive Samples:')
+            print(self.parameter_dict['Positives'])
+            print('Negative Samples:')
+            print(self.parameter_dict['Negatives'])
+
+        def get_vector(self):
+            return np.concatenate((self.positive, self.negative), axis = 1)
+
 
     class GetFeatures:
-        def __init__(self, data_path):
+        def __init__(self, data_path, type):
+            self.filename = type
             self.feature_list = list()
             self.image_path = data_path
             self.positive_path = os.listdir(self.image_path[0])
@@ -88,11 +152,35 @@ class ViolaJonesOD:
                 points.append([value+1, value_two + mask / 2])
                 points.append([value+1, value_two + mask])
                 return points
+            elif type ==3:
+                points = list()
+                points.append([value, value_two])
+                points.append([value, value_two + 2])
+                points.append([value+mask/2, value_two])
+                points.append([value+mask/2, value_two + 2])
+                return points
+            elif type ==4:
+                points = list()
+                points.append([value+mask/2, value_two])
+                points.append([value+mask/2, value_two + 2])
+                points.append([value+mask, value_two])
+                points.append([value+mask, value_two + 2])
+                return points
+
+        def add_feature(self, feature):
+            feature = np.asarray(feature).reshape((len(feature),-1))
+            self.feature_list.append(feature)
+
+        def save_features(self, feature_list):
+            assert len(feature_list) == 2
+            db = open(self.filename, 'wb')
+            pickle.dump(feature_list, db)
+            print('feature list saved')
 
         def extract_features(self):
             integral_list = self.get_integral_image()
-            temp_features = list()
             for index in tqdm(range(2), desc='Feature Extraction'):
+                temp_features = list()
                 shape_one = self.ref_images[index].shape[1]
                 shape_zero = self.ref_images[index].shape[0]
                 for value_n in range(np.int(shape_one/2)):
@@ -105,6 +193,19 @@ class ViolaJonesOD:
                             second_SB = self.get_sum_of_box(points=points, integral=integral_list[index])
                             store_value = (second_SB-first_SB).reshape((1,-1))
                             temp_features.append(store_value)
+                for value_n in range(np.int(shape_zero / 2)):
+                    mask = self.set_filter_size(value=value_n)
+                    for value in range(shape_zero + 1 - mask):
+                        for value_two in range(shape_one + 1 - 2):
+                            points = self.get_points(value=value, value_two=value_two, mask=mask, type=3)
+                            first_SB = self.get_sum_of_box(points=points, integral=integral_list[index])
+                            points = self.get_points(value=value, value_two=value_two, mask=mask, type=4)
+                            second_SB = self.get_sum_of_box(points=points, integral=integral_list[index])
+                            store_value = (second_SB - first_SB).reshape((1, -1))
+                            temp_features.append(store_value)
+                self.add_feature(feature=temp_features)
+            self.save_features(feature_list=self.feature_list)
+
 
 
 if __name__ == "__main__":
@@ -112,7 +213,9 @@ if __name__ == "__main__":
     Code starts here
 
     """
-    tester = ViolaJonesOD.GetFeatures(['ECE661_2020_hw11_DB2/test/positive/','ECE661_2020_hw11_DB2/test/negative/'])
+    tester = ViolaJonesOD(['ECE661_2020_hw11_DB2/train/positive/','ECE661_2020_hw11_DB2/train/negative/','ECE661_2020_hw11_DB2/test/positive/','ECE661_2020_hw11_DB2/test/negative/'])
     tester.scheduler()
-
-
+    # tester = ViolaJonesOD.GetFeatures(['ECE661_2020_hw11_DB2/test/positive/','ECE661_2020_hw11_DB2/test/negative/'])
+    # tester.scheduler()
+    # tester = ViolaJonesOD.AdaBoostTest(feature_path='test_positive.obj')
+    # tester.scheduler()
