@@ -29,6 +29,7 @@ class ViolaJonesOD:
         self.image_path = data_path
 
     def scheduler(self):
+        pass
 
 
 if __name__ == "__main__":
