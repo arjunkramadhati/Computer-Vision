@@ -60,6 +60,8 @@ class ViolaJonesOD:
             for number in range(25):
                 W = W/np.sum(W)
                 sortW, sortL = self.sort_WL(W,L, vector)
+                index = np.argsort(vector, axis=1)
+                row_value = np.arange(len(vector)).reshape
 
 
     class AdaBoostTest:
