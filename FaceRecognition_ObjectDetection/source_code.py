@@ -18,8 +18,12 @@ import cv2 as cv
 import numpy as np
 from tqdm import tqdm
 from scipy import spatial
+import scipy.signal as sc
+from sklearn.neighbors import KNeighborsClassifier
 from scipy.linalg import null_space
 from scipy import optimize
+import math
+import random
 import matplotlib.pyplot as plt
 
 class FaceRecognition:
