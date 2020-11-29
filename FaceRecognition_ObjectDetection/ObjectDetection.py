@@ -35,6 +35,8 @@ class ViolaJonesOD:
         obj = self.getClassifier()
         trainadaboost = self.AdaBoostTrain(obj=obj,feature_path='train.obj')
         trainadaboost.scheduler()
+        testadaboost = self.AdaBoostTest(obj=obj, feature_path='test.obj', model_path='classifier.obj')
+        testadaboost.scheduler()
 
     class getClassifier:
         class StrongC:
@@ -134,23 +136,67 @@ class ViolaJonesOD:
             file_value = pickle.load(file)
             self.positive = file_value[0]
             self.negative = file_value[1]
-            self.classifier = list()
+            self.sampleP = self.positive
+            self.sampleN = self.negative
             file.close()
             file = open(model_path, 'rb')
-            model = pickle.load(file)
+            self.model = pickle.load(file)
             file.close()
 
         def scheduler(self):
-            pass
+            self.process_data()
+            self.commence_testing()
+
+        def get_vector(self):
+            return np.concatenate((self.sampleP, self.sampleN), axis = 1)
 
         def process_data(self):
-            self.parameter_dict['Positives'] = self.positive.shape[1]
             self.parameter_dict['Negatives'] = self.negative.shape[1]
-            self.parameter_dict['Negatives_WHL'] = self.parameter_dict['Negatives']
+            self.parameter_dict['Positives'] = self.positive.shape[1]
+            self.parameter_dict['Positives_WHL'] = self.positive.shape[1]
+            self.parameter_dict['Negatives_WHL'] = self.negative.shape[1]
             print('Positive Samples:')
             print(self.parameter_dict['Positives'])
             print('Negative Samples:')
             print(self.parameter_dict['Negatives'])
+
+        def commence_testing(self):
+            number_wrongP, number_rightP = 0,0
+            ftp_one, ftp_two = list(), list()
+
+            for com in range(len(self.model)):
+                print('Phase: '+str(com))
+                print('Samples positive: ' +str(self.parameter_dict['Positives_WHL']))
+                print('Samples negative: ' +str(self.parameter_dict['Negatives_WHL']))
+                vector = self.get_vector()
+                cl_T = np.asarray(self.model[com].classifierT)
+                f_value = cl_T[:,0].astype(int)
+                angle = cl_T[:,1]
+                p = cl_T[:,2]
+                alpha_value = cl_T[:,3]
+                angle_predicted = 0.5*np.sum(alpha_value)
+                wpred = np.zeros((len(cl_T),vector.shape[1]))
+                tempF = vector[f_value,:]
+                wT = (p*angle)[:, None]-p[:, None]*tempF
+                wpred[wT>=0]= 1
+                spred = np.zeros((vector.shape[1],1))
+                tempS = np.dot(wpred.transpose(), alpha_value)
+                spred[tempS>=angle_predicted]=1
+                pcIdX = [x for x in range(self.parameter_dict['Positives']) if spred[x]==1]
+                neIdX = [x for x in range(self.parameter_dict['Negatives']) if spred[x+self.parameter_dict['Positives']]==1]
+                print('Right samples + '+ str(pcIdX))
+                print('Error samples - '+str(neIdX))
+                number_wrongP +=(self.parameter_dict['Positives']-len(pcIdX))
+                ftp_one.append(number_wrongP/self.parameter_dict['Positives_WHL'])
+                number_rightP +=(self.parameter_dict['Negatives']-len(neIdX))
+                ftp_two.append((self.parameter_dict['Negatives_WHL']-number_rightP)/self.parameter_dict['Negatives_WHL'])
+                self.sampleP = self.sampleP[:, pcIdX]
+                self.sampleN = self.sampleN[:, neIdX]
+                self.parameter_dict['Positives'] = len(pcIdX)
+                self.parameter_dict['Negatives'] = len(neIdX)
+
+
+
 
     class AdaBoostTrain:
         def __init__(self, obj, feature_path):
@@ -196,7 +242,7 @@ class ViolaJonesOD:
                 vector = temp_vector
                 self.classifier.append(self.parameter_dict['Negatives']/self.parameter_dict['Negatives_WHL'])
             db = open('classifier.obj','wb')
-            pickle.dump(self.classifier, db)
+            pickle.dump(classifier_list, db)
             print('Model saved. Training complete')
 
 
