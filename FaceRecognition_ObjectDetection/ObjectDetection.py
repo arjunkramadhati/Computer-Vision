@@ -32,6 +32,9 @@ class ViolaJonesOD:
         tester.scheduler()
         tester = self.GetFeatures(data_path=[self.folders[2], self.folders[3]],type='test.obj')
         tester.scheduler()
+        obj = self.getClassifier()
+        trainadaboost = self.AdaBoostTrain(obj=obj,feature_path='train.obj')
+        trainadaboost.scheduler()
 
     class getClassifier:
         class StrongC:
@@ -50,6 +53,21 @@ class ViolaJonesOD:
             sortL = np.tile(L, (len(vector),1))
             return sortW, sortL
 
+        def getSum(self, W, ps, ns, sL, sW):
+            spW = np.cumsum(sW * sL, axis=1)
+            snW = np.cumsum(sW, axis=1) - spW
+            tnW = np.sum(W[:, ps:])
+            tpW = np.sum(W[:,:ps])
+            return spW, snW, tnW, tpW
+
+        def get_error_terms(self, vector, spW, snW, tnW, tpW):
+            error = np.zeros((vector.shape[0], vector.shape[1], 2))
+            error[:, :, 1] = snW + tpW - spW
+            error[:, :, 0] = spW + tnW - snW
+            index = np.unravel_index(np.argmin(error), error.shape)
+            errro_min = error[index]
+            return index, errro_min, error
+
         def getWeakC(self, vector, positive_samples, negative_samples):
             cl = list()
             cl_T = list()
@@ -61,21 +79,94 @@ class ViolaJonesOD:
                 W = W/np.sum(W)
                 sortW, sortL = self.sort_WL(W,L, vector)
                 index = np.argsort(vector, axis=1)
-                row_value = np.arange(len(vector)).reshape
+                row_value = np.arange(len(vector)).reshape((-1,1))
+                sortL = sortL[row_value, index]
+                sortW = sortW[row_value, index]
+                spW, snW, tnW, tpW = self.getSum(W=W, ps=positive_samples, ns=negative_samples, sL = sortL, sW=sortW)
+                index_e, errro_min, error = self.get_error_terms(vector=vector, spW=spW, snW = snW, tnW=tnW, tpW=tpW)
+                f_value = index_e[0]
+                index_S = index[f_value,:]
+                pt = np.zeros((vector.shape[1],1))
+                p_matrix = np.zeros((vector.shape[1],1))
+                if index_e[2]==0:
+                    p = -1
+                    pt[index_e[1]+1:]=1
+                else:
+                    p = 1
+                    pt[:index_e[1]+1]=1
+                p_matrix[index_S]= pt
+                sortV = vector[f_value,:]
+                sortV = sortV[index_S]
+                if index_e[1]==0:
+                    angle = sortV[0]-0.01
+                elif index_e[1]==-1:
+                    angle = sortV[-1]+0.01
+                else:
+                    angle = np.mean(sortV[index_e[1]-1:index_e[1]+1])
+                beta_value = errro_min/(1-errro_min)
+                alpha_value.append(np.log(1/beta_value))
+                cl.append(p_matrix.transpose())
+                cl_T.append([f_value, angle, p, np.log(1/beta_value)])
+                W = W*(beta_value**(1-np.abs(L-p_matrix.transpose())))
+                s_value = np.dot(np.asarray(cl).transpose(),np.asarray(alpha_value))
+                angle_updated = np.min(s_value[:positive_samples])
+                prediction_s = np.zeros(s_value.shape)
+                prediction_s[s_value>=angle_updated]=1
+                print(np.sum(prediction_s[positive_samples:])/negative_samples)
+                if (np.sum(prediction_s[positive_samples:])/negative_samples<0.5):
+                    break
+            index_new = list()
+            index_new.extend(np.arange(positive_samples))
+            wrong_negative_index = [positive_samples+x for x in range(negative_samples) if prediction_s[positive_samples+x]==1]
+            index_new.extend(wrong_negative_index)
+            obj.index = np.asarray(index_new)
+            obj.weak_number = number+1
+            obj.classifierT = cl_T
+            return obj
 
 
     class AdaBoostTest:
-        def __init__(self, feature_path):
+        def __init__(self, obj, feature_path, model_path):
             self.parameter_dict = dict()
+            self.object = obj
             self.feature_path = feature_path
             file = open(feature_path, 'rb')
             file_value = pickle.load(file)
             self.positive = file_value[0]
             self.negative = file_value[1]
+            self.classifier = list()
+            file.close()
+            file = open(model_path, 'rb')
+            model = pickle.load(file)
+            file.close()
+
+        def scheduler(self):
+            pass
+
+        def process_data(self):
+            self.parameter_dict['Positives'] = self.positive.shape[1]
+            self.parameter_dict['Negatives'] = self.negative.shape[1]
+            self.parameter_dict['Negatives_WHL'] = self.parameter_dict['Negatives']
+            print('Positive Samples:')
+            print(self.parameter_dict['Positives'])
+            print('Negative Samples:')
+            print(self.parameter_dict['Negatives'])
+
+    class AdaBoostTrain:
+        def __init__(self, obj, feature_path):
+            self.parameter_dict = dict()
+            self.object = obj
+            self.feature_path = feature_path
+            file = open(feature_path, 'rb')
+            file_value = pickle.load(file)
+            self.positive = file_value[0]
+            self.negative = file_value[1]
+            self.classifier = list()
             file.close()
 
         def scheduler(self):
             self.process_data()
+            self.commence_training()
 
         def process_data(self):
             self.parameter_dict['Positives'] = self.positive.shape[1]
@@ -88,6 +179,25 @@ class ViolaJonesOD:
 
         def get_vector(self):
             return np.concatenate((self.positive, self.negative), axis = 1)
+
+        def commence_training(self):
+            vector = self.get_vector()
+            classifier_list = list()
+
+            for com in range(10):
+                print('Phase: '+ str(com))
+                wc = self.object.getWeakC(vector=vector, positive_samples=self.parameter_dict['Positives'],negative_samples=self.parameter_dict['Negatives'])
+                classifier_list.append(wc)
+                if (len(wc.index)==self.parameter_dict['Positives']):
+                    break
+                self.parameter_dict['Negatives'] = len(wc.index)-self.parameter_dict['Positives']
+                print('Negative samples: '+ str(self.parameter_dict['Negatives']))
+                temp_vector = vector[:,wc.index]
+                vector = temp_vector
+                self.classifier.append(self.parameter_dict['Negatives']/self.parameter_dict['Negatives_WHL'])
+            db = open('classifier.obj','wb')
+            pickle.dump(self.classifier, db)
+            print('Model saved. Training complete')
 
 
     class GetFeatures:
