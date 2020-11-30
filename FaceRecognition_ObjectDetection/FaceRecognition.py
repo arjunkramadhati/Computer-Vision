@@ -31,16 +31,19 @@ class RecognizeFace:
 
     class LDA_Recog:
 
-        def __init__(self, dataset_path, params):
+        def __init__(self, dataset_path, params, thresh = 30, neighbors = 1):
             self.classes = params[0]
             self.samples = params[1]
             self.path = dataset_path
             self.params = dict()
+            self.model_predictor = KNeighborsClassifier(n_neighbors=neighbors)
+            self.thresh = thresh
             self.params['Vectors'] = list()
             self.params['Means'] = list()
             for index, element in enumerate(tqdm(self.path, desc='Data Loading')):
                 folder = os.listdir(element)
                 folder.sort()
+                print(element)
                 temp = list()
                 for image_name in folder:
                     image_file = cv.imread(element+image_name)
@@ -52,7 +55,26 @@ class RecognizeFace:
                 self.params['Means'].append(mean)
 
         def scheduler(self):
-            pass
+            self.compute()
+
+        def get_predictions(self, feature_set, label_set, test_set):
+            feature_set = np.nan_to_num(feature_set)
+            test_set = np.nan_to_num(test_set)
+            self.model_predictor.fit(feature_set.transpose(), label_set)
+            return self.model_predictor.predict(test_set.transpose())
+
+        def get_results(self, vectorZ, u_value_w, label_list):
+            result = list()
+            correct = np.zeros((len(label_list), 1))
+            for value_K in range(self.thresh):
+                ss = vectorZ.dot(u_value_w[: , :value_K+1])
+                ss = ss/np.linalg.norm(ss, axis=0)
+                trFeatures = np.dot(ss.transpose(), self.params['Vectors'][0]-self.params['Means'][0][:, None])
+                tsFeatures = np.dot(ss.transpose(), self.params['Vectors'][1]-self.params['Means'][1][:, None])
+                prediction = self.get_predictions(feature_set=trFeatures, label_set=label_list, test_set=tsFeatures)
+                correct[prediction==label_list] = 1
+                result += [np.sum(correct)/len(label_list)]
+            return result
 
         def get_mean_vector(self, vector):
             vec_difference = np.zeros(vector.shape)
@@ -61,7 +83,8 @@ class RecognizeFace:
                 vec_mean[:, component] = np.mean(vector[:, component * self.samples:(component + 1) * self.samples],
                                                  axis=1)
                 vec_difference[:, component*self.samples:(component+1)*self.samples]=vector[:, component*self.samples:(component+1)*self.samples]-vec_mean[:,component, None]
-            return vec_mean, vec_difference, (vec_mean-self.params['Means'][0])
+            valLst = vec_mean-self.params['Means'][0][:, None]
+            return vec_mean, vec_difference, valLst
 
         def get_label_vector(self):
             label_list = list()
@@ -70,7 +93,8 @@ class RecognizeFace:
             return np.asarray(label_list)
 
         def process_data(self, vectors, sizeX):
-            vectors = (np.asarray(vectors).reshape((sizeX,-1))).transpose()
+            vectors = (np.asarray(vectors).reshape((sizeX,-1)))
+            vectors = vectors.transpose()
             vectors = vectors/np.linalg.norm(vectors, axis=0)
             value_mean = np.mean(vectors, axis=1)
             return value_mean, vectors
@@ -89,10 +113,13 @@ class RecognizeFace:
             entry_value = self.get_entry_value(d_value=d_value)
             vectorZ = eigenvector.dot(entry_value)
             vectorX = np.dot(vectorZ.transpose(),difference)
+            vectorX = np.nan_to_num(vectorX)
             d_value_w, u_value_w = np.linalg.eig(vectorX.dot(vectorX.transpose()))
             index = np.argsort(d_value_w)
             u_value_w=u_value_w[:, index]
-
+            result = self.get_results(vectorZ, u_value_w, label_list)
+            print('LDA Face Rec complete. Score: ')
+            print(result)
 
 
     class PCA_Reccog:
@@ -185,3 +212,4 @@ if __name__ == "__main__":
     # tester = RecognizeFace.PCA_Reccog(['ECE661_2020_hw11_DB1/train/','ECE661_2020_hw11_DB1/test/'], features=(630,16384), labels=630)
     # tester.scheduler()
     tester = RecognizeFace.LDA_Recog(['ECE661_2020_hw11_DB1/train/','ECE661_2020_hw11_DB1/test/'], params=(30,21))
+    tester.scheduler()
