@@ -24,10 +24,22 @@ import matplotlib.pyplot as plt
 
 
 class ViolaJonesOD:
+    """
+    Main class to perform Object Detection using the Viola Jones Algorithm
+    """
     def __init__(self, folder_locations):
+        """
+        Initialise the object with the folder locations of the data sets
+        :param folder_locations:
+        """
         self.folders = folder_locations
 
     def scheduler(self):
+        """
+        This function runs all the required functions to get the Object Detection network
+        running
+        :return:
+        """
         tester = self.GetFeatures(data_path=[self.folders[0], self.folders[1]],type='train.obj')
         tester.scheduler()
         tester = self.GetFeatures(data_path=[self.folders[2], self.folders[3]],type='test.obj')
@@ -39,23 +51,55 @@ class ViolaJonesOD:
         testadaboost.scheduler()
 
     class getClassifier:
+        """
+        This is the class to get the classifier for the cascaded AdaBoost approach
+        """
         class StrongC:
+            """
+            Strong classifier object
+            """
             index = list()
             weak_number = 0
             classifierT = list()
 
         def get_weight(self, samplesP, samplesN):
+            """
+            Get weights for the given sample set
+            :param samplesP: Positives
+            :param samplesN: Negatives
+            :return: Updated weights
+            """
             return np.concatenate((np.ones((1,samplesP))*0.5/samplesP, np.ones((1,samplesN))*0.5/samplesN), axis=1)
 
         def get_labels(self, samplesP, samplesN):
+            """
+            Prepare and get the labels
+            :param samplesP: Positives
+            :param samplesN: Negatives
+            :return: Labels
+            """
             return np.concatenate((np.ones((1,samplesP)), np.zeros((1, samplesN))) , axis=1)
 
         def sort_WL(self, W, L, vector):
+            """
+            Sort the weights and labels
+            :param W: Updated weights
+            :param L: Labels
+            :param vector: Concatenated positive and negative sample vector
+            :return:Sorted values
+            """
             sortW = np.tile(W, (len(vector),1))
             sortL = np.tile(L, (len(vector),1))
             return sortW, sortL
 
-        def getSum(self, W, ps, ns, sL, sW):
+        def getSum(self, W, ps, sL, sW):
+            """
+            Get the sum for the sorted values
+            :param W:Updates weights
+            :param ps: Positive samples
+            :param sL: Sorted Labels
+            :param sW: Sorted Weights
+            """
             spW = np.cumsum(sW * sL, axis=1)
             snW = np.cumsum(sW, axis=1) - spW
             tnW = np.sum(W[:, ps:])
@@ -63,6 +107,10 @@ class ViolaJonesOD:
             return spW, snW, tnW, tpW
 
         def get_error_terms(self, vector, spW, snW, tnW, tpW):
+            """
+            Get the required error terms.
+            :return: Index of minimum error, minimum error value, error vector
+            """
             error = np.zeros((vector.shape[0], vector.shape[1], 2))
             error[:, :, 1] = snW + tpW - spW
             error[:, :, 0] = spW + tnW - snW
@@ -71,6 +119,13 @@ class ViolaJonesOD:
             return index, errro_min, error
 
         def getWeakC(self, vector, positive_samples, negative_samples):
+            """
+            Get the wek classifier which can extract low level image features
+            :param vector: Concatenated positive and negative samples vector
+            :param positive_samples: Positive samples
+            :param negative_samples: Negative samples
+            :return: Classifier object
+            """
             cl = list()
             cl_T = list()
             alpha_value = list()
@@ -84,18 +139,18 @@ class ViolaJonesOD:
                 row_value = np.arange(len(vector)).reshape((-1,1))
                 sortL = sortL[row_value, index]
                 sortW = sortW[row_value, index]
-                spW, snW, tnW, tpW = self.getSum(W=W, ps=positive_samples, ns=negative_samples, sL = sortL, sW=sortW)
+                spW, snW, tnW, tpW = self.getSum(W=W, ps=positive_samples, sL = sortL, sW=sortW)
                 index_e, errro_min, error = self.get_error_terms(vector=vector, spW=spW, snW = snW, tnW=tnW, tpW=tpW)
                 f_value = index_e[0]
                 index_S = index[f_value,:]
                 pt = np.zeros((vector.shape[1],1))
                 p_matrix = np.zeros((vector.shape[1],1))
-                if index_e[2]==0:
+                if index_e[2] == 0:
                     p = -1
-                    pt[index_e[1]+1:]=1
+                    pt[index_e[1]+1:] = 1
                 else:
                     p = 1
-                    pt[:index_e[1]+1]=1
+                    pt[:index_e[1]+1] = 1
                 p_matrix[index_S]= pt
                 sortV = vector[f_value,:]
                 sortV = sortV[index_S]
@@ -126,9 +181,17 @@ class ViolaJonesOD:
             obj.classifierT = cl_T
             return obj
 
-
     class AdaBoostTest:
+        """
+        Class to run AdaBoost Testing
+        """
         def __init__(self, obj, feature_path, model_path):
+            """
+            Initialise the AdaBoost Tester object
+            :param obj: Classifier object
+            :param feature_path: Features object from training
+            :param model_path: classifier object from training
+            """
             self.parameter_dict = dict()
             self.object = obj
             self.feature_path = feature_path
@@ -144,13 +207,25 @@ class ViolaJonesOD:
             file.close()
 
         def scheduler(self):
+            """
+            This function runs all the required functions in order
+            to get the task done
+            """
             self.process_data()
             self.commence_testing()
 
         def get_vector(self):
+            """
+            Get the required vector to compute weights and parameters.
+            :return: Vector
+            """
             return np.concatenate((self.sampleP, self.sampleN), axis = 1)
 
         def process_data(self):
+            """
+            Process the data before commencing testing into
+            dictionary entries.
+            """
             self.parameter_dict['Negatives'] = self.negative.shape[1]
             self.parameter_dict['Positives'] = self.positive.shape[1]
             self.parameter_dict['Positives_WHL'] = self.positive.shape[1]
@@ -161,10 +236,13 @@ class ViolaJonesOD:
             print(self.parameter_dict['Negatives'])
 
         def commence_testing(self):
+            """
+            This function runs all the required items to execute the AdaBoost testing process.
+            """
             number_wrongP, number_rightP = 0,0
             ftp_one, ftp_two = list(), list()
-
             for com in range(len(self.model)):
+                print(len(self.model))
                 print('Phase: '+str(com))
                 print('Samples positive: ' +str(self.parameter_dict['Positives_WHL']))
                 print('Samples negative: ' +str(self.parameter_dict['Negatives_WHL']))
@@ -194,12 +272,20 @@ class ViolaJonesOD:
                 self.sampleN = self.sampleN[:, neIdX]
                 self.parameter_dict['Positives'] = len(pcIdX)
                 self.parameter_dict['Negatives'] = len(neIdX)
-
-
-
+                list = [self.parameter_dict, ftp_one, ftp_two]
+                file = open('AdaBoost_Testing_Results.obj', 'wb')
+                pickle.dump(list, file)
 
     class AdaBoostTrain:
+        """
+        This class is for the Training of the AdaBoost Object Detection network
+        """
         def __init__(self, obj, feature_path):
+            """
+            Initialise object
+            :param obj: Classifier object
+            :param feature_path: Path to the features extracted from the training set
+            """
             self.parameter_dict = dict()
             self.object = obj
             self.feature_path = feature_path
@@ -211,10 +297,16 @@ class ViolaJonesOD:
             file.close()
 
         def scheduler(self):
+            """
+            This function runs all the required function in the correct order.
+            """
             self.process_data()
             self.commence_training()
 
         def process_data(self):
+            """
+            Process and organise the data before training
+            """
             self.parameter_dict['Positives'] = self.positive.shape[1]
             self.parameter_dict['Negatives'] = self.negative.shape[1]
             self.parameter_dict['Negatives_WHL'] = self.parameter_dict['Negatives']
@@ -224,14 +316,20 @@ class ViolaJonesOD:
             print(self.parameter_dict['Negatives'])
 
         def get_vector(self):
+            """
+            Get the required vector to compute weights and parameters.
+            :return: Vector
+            """
             return np.concatenate((self.positive, self.negative), axis = 1)
 
         def commence_training(self):
+            """
+            This function takes care of the AdaBoost Training process
+            :return: Save the trained feature model
+            """
             vector = self.get_vector()
             classifier_list = list()
-
             for com in range(10):
-                print('Phase: '+ str(com))
                 wc = self.object.getWeakC(vector=vector, positive_samples=self.parameter_dict['Positives'],negative_samples=self.parameter_dict['Negatives'])
                 classifier_list.append(wc)
                 if (len(wc.index)==self.parameter_dict['Positives']):
@@ -245,9 +343,16 @@ class ViolaJonesOD:
             pickle.dump(classifier_list, db)
             print('Model saved. Training complete')
 
-
     class GetFeatures:
+        """
+        This class is to extract features from the testing and training directories
+        """
         def __init__(self, data_path, type):
+            """
+            Initialise the object to extract the features
+            :param data_path: Path to the directory
+            :param type: Testing or Training to store them accordingly
+            """
             self.filename = type
             self.feature_list = list()
             self.image_path = data_path
@@ -267,18 +372,36 @@ class ViolaJonesOD:
             self.get_images_ready()
 
         def get_images_ready(self):
+            """
+            Organize the images
+            """
             for index, path in enumerate(tqdm(self.paths, desc='Image Load')):
                 for value in range(len(path)):
                     ref_img = cv.imread(self.image_path[index]+path[index])
                     self.image_vector_dict[index][:,:, index] = cv.cvtColor(ref_img, cv.COLOR_BGR2GRAY)
 
         def scheduler(self):
+            """
+            This function runs all the required functions in order
+            :return:
+            """
             self.extract_features()
 
         def set_filter_size(self, value):
+            """
+            Get filter size
+            :param value: Value for the shape
+            :return: Filter size
+            """
             return (value+1)*2
 
         def get_sum_of_box(self, points, integral):
+            """
+            Box sum function
+            :param points: Corner points
+            :param integral: Integral image
+            :return: Sum of the box
+            """
             left_top = integral[np.int(points[0][0])][np.int(points[0][1])]
             right_top = integral[np.int(points[1][0])][np.int(points[1][1])]
             right_bottom = integral[np.int(points[2][0])][np.int(points[2][1])]
@@ -286,6 +409,10 @@ class ViolaJonesOD:
             return left_bottom-right_top-right_bottom+left_top
 
         def get_integral_image(self):
+            """
+            Get the integral image
+            :return: Integral image list
+            """
             temp = list()
             for index in range(2):
                 integral = np.cumsum(self.image_vector_dict[index], axis=1)
@@ -296,6 +423,14 @@ class ViolaJonesOD:
             return temp
 
         def get_points(self, value, value_two, mask, type):
+            """
+            Get the required points for the box
+            :param value: First value (row)
+            :param value_two: Second value (Column)
+            :param mask: Filter or mask size
+            :param type: Type of points
+            :return: Corner points
+            """
             if type ==1:
                 points = list()
                 points.append([value, value_two])
