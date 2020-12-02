@@ -7,6 +7,8 @@ Face Recognition & Object Detection
 ------------------------------------
 Author : Arjun Kramadhati Gopi, MS-Computer & Information Technology, Purdue University.
 Date: Dec 2, 2020
+
+Reference : https://engineering.purdue.edu/RVL/ECE661_2018/Homeworks/HW10/2BestSolutions/2.pdf
 ------------------------------------
 [TO RUN CODE]: python3 source_code.py
 ------------------------------------
@@ -77,6 +79,16 @@ class RecognizeFace:
             self.model_predictor.fit(feature_set.transpose(), label_set)
             return self.model_predictor.predict(test_set.transpose())
 
+        def get_transpose(self, ss):
+            return ss.transpose()
+
+        def get_acc(self, label_list, prediction):
+            correct = np.zeros((len(label_list), 1))
+            result = list()
+            correct[prediction == label_list] = 1
+            result += [np.sum(correct) / len(label_list)]
+            return result
+
         def get_results(self, vectorZ, u_value_w, label_list):
             """
             This function returns the accuracy or the score of the model's
@@ -86,16 +98,14 @@ class RecognizeFace:
             :param label_list: Labels
             :return: Accuracy
             """
-            result = list()
-            correct = np.zeros((len(label_list), 1))
             for value_K in range(self.thresh):
                 ss = vectorZ.dot(u_value_w[: , :value_K+1])
                 ss = ss/np.linalg.norm(ss, axis=0)
-                trFeatures = np.dot(ss.transpose(), self.params['Vectors'][0]-self.params['Means'][0][:, None])
-                tsFeatures = np.dot(ss.transpose(), self.params['Vectors'][1]-self.params['Means'][1][:, None])
+                value = self.get_transpose(ss=ss)
+                trFeatures = np.dot(value, self.params['Vectors'][0]-self.params['Means'][0][:, None])
+                tsFeatures = np.dot(value, self.params['Vectors'][1]-self.params['Means'][1][:, None])
                 prediction = self.get_predictions(feature_set=trFeatures, label_set=label_list, test_set=tsFeatures)
-                correct[prediction==label_list] = 1
-                result += [np.sum(correct)/len(label_list)]
+                result = self.get_acc(label_list=label_list, prediction=prediction)
             return result
 
         def get_mean_vector(self, vector):
@@ -107,9 +117,9 @@ class RecognizeFace:
             vec_difference = np.zeros(vector.shape)
             vec_mean = np.zeros((vector.shape[0], self.classes))
             for component in range(self.classes):
-                vec_mean[:, component] = np.mean(vector[:, component * self.samples:(component + 1) * self.samples],
+                vec_mean[:, component] = np.mean(vector[:, component * self.samples:component * self.samples],
                                                  axis=1)
-                vec_difference[:, component*self.samples:(component+1)*self.samples]=vector[:, component*self.samples:(component+1)*self.samples]-vec_mean[:,component, None]
+                vec_difference[:, component*self.samples+1:(component)*self.samples]=vector[:, component*self.samples+1:(component)*self.samples]-vec_mean[:,component, None]
             valLst = vec_mean-self.params['Means'][0][:, None]
             return vec_mean, vec_difference, valLst
 
@@ -136,6 +146,12 @@ class RecognizeFace:
             value_mean = np.mean(vectors, axis=1)
             return value_mean, vectors
 
+        def get_sorted_du(self, d_value, u_value):
+            index = np.argsort(-1 * d_value)
+            d_value = d_value[index]
+            u_value = u_value[:, index]
+            return d_value, u_value
+
         def get_entry_value(self, d_value):
             return np.eye(self.classes)*(d_value**(-0.5))
 
@@ -148,26 +164,24 @@ class RecognizeFace:
             label_list = self.get_label_vector()
             mean, difference, mean_two = self.get_mean_vector(vector=self.params['Vectors'][0])
             d_value, u_value = np.linalg.eig(mean_two.transpose().dot(mean_two))
-            index = np.argsort(-1*d_value)
-            d_value = d_value[index]
-            u_value = u_value[:, index]
+            d_value, u_value = self.get_sorted_du(d_value=d_value,u_value=u_value)
             eigenvector = mean_two.dot(u_value)
             entry_value = self.get_entry_value(d_value=d_value)
             vectorZ = eigenvector.dot(entry_value)
             vectorX = np.dot(vectorZ.transpose(),difference)
             vectorX = np.nan_to_num(vectorX)
             d_value_w, u_value_w = np.linalg.eig(vectorX.dot(vectorX.transpose()))
-            index = np.argsort(d_value_w)
-            u_value_w=u_value_w[:, index]
+            _, u_value_w = self.get_sorted_du(d_value=d_value, u_value=u_value_w)
             result = self.get_results(vectorZ, u_value_w, label_list)
             file = open('result_lda.obj', 'wb')
             pickle.dump(result, file)
+            print('LDA Face Recognition complete')
 
     class PCA_Reccog:
         """
         This is the class to perform Face Recognition using PCA
         """
-        def __init__(self, dataset_path, features, labels, neighbors=1):
+        def __init__(self, dataset_path, features, labels, neighbors=4):
             """
             Initialise the object for PCA Face Recognition
             :param dataset_path: Path to the
@@ -214,7 +228,7 @@ class RecognizeFace:
             """
             if idx == 0:
                 self.parameter_dict['Labels_Train'][index] = int(filename[0]+filename[1])
-            elif idx == 0:
+            elif idx == 1:
                 self.parameter_dict['Labels_Test'][index] = int(filename[0]+filename[1])
 
         def prepare_data(self):
@@ -235,24 +249,24 @@ class RecognizeFace:
                     index+=1
             print('Data prep complete')
 
-        def get_error_terms(self, vector):
+        def get_eigen_terms(self, vector):
             """
-            Get error terms for PCA
+            Get eigen terms
             :param vector: Image vector
-            :return: error value and error vector
+            :return: eigen value and eigen vector
             """
-            value, vector = np.linalg.eigh(np.matmul(vector.T,vector))
+            value, vector = np.linalg.eigh(np.matmul(vector.T, vector))
             index = np.argsort(-1*value)
             return value, vector[:, index]
 
-        def get_W(self, vector, error_vector):
+        def get_W(self, vector, eigen_vector):
             """
             Get the W matrix
             :param vector: Image vector
-            :param error_vector: Error vector
+            :param eigen_vector: Eigen vector
             :return: W matrix
             """
-            W_matrix = np.matmul(vector, error_vector)
+            W_matrix = np.matmul(vector, eigen_vector)
             W_matrix = W_matrix/np.linalg.norm(W_matrix, axis=0)
             return W_matrix
 
@@ -262,6 +276,7 @@ class RecognizeFace:
             :param vector: Testing feature vector
             :return: Predictions
             """
+            print(self.model_classify.predict(vector.T))
             return self.model_classify.predict(vector.T)
 
         def get_featurers(self, W_value, vector, component_number):
@@ -273,7 +288,8 @@ class RecognizeFace:
             :param guess: Prediction
             :return: Accuracy
             """
-            return (((guess==self.parameter_dict['Labels_Test']).sum())/630*100)
+            test_value = self.parameter_dict['Labels_Test']
+            return ((guess==test_value).sum()/630*100)
 
         def commence_analysis(self):
             """
@@ -281,19 +297,21 @@ class RecognizeFace:
             :return: None
             """
             value_Train, mu_value_Train, vector_Train = self.compute_mean(value=self.parameter_dict['Features_Train'].copy())
-            error_value, error_vector = self.get_error_terms(vector=vector_Train)
+            eigen_value, eigen_vector = self.get_eigen_terms(vector=vector_Train)
             self.parameter_dict['Features_Train_Mod'] = value_Train
             value_Test, mu_value_Test, vector_Test = self.compute_mean(value=self.parameter_dict['Features_Test'].copy())
             self.parameter_dict['Features_Test_Negated'] = value_Test
-            W_value = self.get_W(vector=vector_Train, error_vector=error_vector)
+            W_value = self.get_W(vector=vector_Train, eigen_vector=eigen_vector)
             temp = list()
-            for component in range(30):
+            for component in range(25):
                 trainingF = self.get_featurers(W_value=W_value, vector=vector_Train, component_number=component)
                 testingF = self.get_featurers(W_value=W_value, vector=vector_Test, component_number=component)
                 self.model_classify.fit(trainingF.T, self.parameter_dict['Labels_Train'])
                 guess_value = self.get_prediction(vector=testingF)
                 accuracy = self.get_results(guess=guess_value)
                 temp.append(accuracy)
+                print(accuracy)
+            print(temp)
             file = open('result_pca.obj', 'wb')
             pickle.dump(temp, file)
 
@@ -313,7 +331,6 @@ class RecognizeFace:
 if __name__ == "__main__":
     """
     Code starts here
-
     """
     tester = RecognizeFace.PCA_Reccog(['ECE661_2020_hw11_DB1/train/','ECE661_2020_hw11_DB1/test/'], features=(630,16384), labels=630)
     tester.scheduler()
