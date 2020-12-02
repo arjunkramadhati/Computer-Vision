@@ -28,7 +28,7 @@ class RecognizeFace:
         """
         This is the class for Face Recognition using LDA
         """
-        def __init__(self, dataset_path, params, thresh = 30, neighbors = 1):
+        def __init__(self, dataset_path, params, thresh = 25, neighbors = 1):
             """
             Initialise the LDA Face Rec object
             :param dataset_path: Path to two folders- Training, Testing
