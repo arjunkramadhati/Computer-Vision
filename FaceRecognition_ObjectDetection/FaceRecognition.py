@@ -10,7 +10,7 @@ Date: Dec 2, 2020
 
 Reference : https://engineering.purdue.edu/RVL/ECE661_2018/Homeworks/HW10/2BestSolutions/2.pdf
 ------------------------------------
-[TO RUN CODE]: python3 source_code.py
+[TO RUN CODE]: python3 FaceRecognition.py
 ------------------------------------
 ------------------------------------
 """
